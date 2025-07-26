@@ -108,6 +108,14 @@ def get_channel_members(channel_id):
         logger.error(f"Error getting channel members: {e}")
         return []
 
+def get_active_trip(channel_id: str):
+    """Get the active trip for a channel. Returns (trip_name, created_by) or None if no trip exists."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT name, created_by FROM trips WHERE channel_id=%s", (channel_id,))
+        row = cur.fetchone()
+        return row if row else None
+
 def post_announce(trip: str, channel_id: str, text: str):
     with get_conn() as conn:
         cur = conn.cursor()
@@ -123,21 +131,20 @@ def cmd_help(ack, respond):
     eph(respond, (
         "*Available commands:*\n"
         "`/help` – show this help message\n"
-        "`/createtrip TripName` – define a new trip\n"
+        "`/createtrip TripName` – create/replace the trip for this channel\n"
         "`/deletetrip TripName` – delete a trip\n"
         "`/settripchannel TripName #channel` – announcements\n"
-        "`/createcar TripName seats` – create & join car (auto-named)\n"
-        "`/listcars TripName` – list cars on a trip\n"
-        "`/carstatus TripName` – show fill & members\n"
+        "`/createcar seats` – create & join car (auto-named)\n"
+        "`/listcars` – list cars on the active trip\n"
+        "`/carstatus` – show fill & members\n"
         "`/requestjoin CarID` – ask to join a car\n"
         "`/leavecar CarID` – leave a car you joined\n"
-
         "`/updatecar CarID seats=X` – update seat count\n"
         "`/removeuser CarID @user` – remove a member (creator only)\n"
         "`/removecar CarID` – delete a car (creator only)\n"
-        "`/mycars TripName` – your cars & joined cars\n"
-        "`/mytrips` – trips you’ve joined or created\n"
-        "`/needride TripName` – users not in any car\n"
+        "`/mycars` – your cars & joined cars\n"
+        "`/mytrips` – trips you've joined or created\n"
+        "`/needride` – users not in any car\n"
     ))
 
 # ─── /createtrip & /deletetrip ──────────────────────────────────────────
@@ -151,15 +158,15 @@ def cmd_createtrip(ack, respond, command):
     channel_id = command["channel_id"]
     with get_conn() as conn:
         cur = conn.cursor()
-        try:
-            cur.execute(
-                "INSERT INTO trips(name, channel_id, created_by) VALUES(%s,%s,%s)",
-                (trip, channel_id, user)
-            )
-            conn.commit()
-            eph(respond, f":round_pushpin: Trip *{trip}* created for this channel.")
-        except psycopg2.errors.UniqueViolation:
-            eph(respond, f":x: Trip *{trip}* already exists in this channel.")
+        # Delete any existing trip for this channel (one trip per channel)
+        cur.execute("DELETE FROM trips WHERE channel_id=%s", (channel_id,))
+        # Create the new trip
+        cur.execute(
+            "INSERT INTO trips(name, channel_id, created_by) VALUES(%s,%s,%s)",
+            (trip, channel_id, user)
+        )
+        conn.commit()
+        eph(respond, f":round_pushpin: Trip *{trip}* created for this channel.")
 
 @bolt_app.command("/deletetrip")
 def cmd_deletetrip(ack, respond, command):
@@ -214,16 +221,21 @@ def cmd_settripchannel(ack, respond, command):
 @bolt_app.command("/createcar")
 def cmd_createcar(ack, respond, command):
     ack()
-    parts = (command.get("text") or "").split()
-    if len(parts) != 2:
-        return eph(respond, "Usage: `/createcar TripName seats`")
-    trip, seats_str = parts
+    seats_str = (command.get("text") or "").strip()
+    if not seats_str:
+        return eph(respond, "Usage: `/createcar seats`")
     try:
         seats = int(seats_str)
     except ValueError:
         return eph(respond, ":x: seats must be a number.")
     user = command["user_id"]
     channel_id = command["channel_id"]
+    
+    # Get the active trip for this channel
+    trip_info = get_active_trip(channel_id)
+    if not trip_info:
+        return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+    trip = trip_info[0]
     
     # Get username for car naming
     try:
@@ -235,9 +247,6 @@ def cmd_createcar(ack, respond, command):
         name = f"<@{user}>'s car"
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT 1 FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
-        if not cur.fetchone():
-            return eph(respond, f":x: Trip *{trip}* does not exist in this channel.")
         try:
             cur.execute(
                 "INSERT INTO cars(trip, channel_id, name, seats, created_by) VALUES(%s,%s,%s,%s,%s) RETURNING id",
@@ -258,10 +267,13 @@ def cmd_createcar(ack, respond, command):
 @bolt_app.command("/listcars")
 def cmd_listcars(ack, respond, command):
     ack()
-    trip = (command.get("text") or "").strip()
-    if not trip:
-        return eph(respond, "Usage: `/listcars TripName`")
     channel_id = command["channel_id"]
+    
+    # Get the active trip for this channel
+    trip_info = get_active_trip(channel_id)
+    if not trip_info:
+        return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+    trip = trip_info[0]
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
@@ -287,9 +299,13 @@ def cmd_listcars(ack, respond, command):
 @bolt_app.command("/carstatus")
 def cmd_carstatus(ack, respond, command):
     ack()
-    trip = (command.get("text") or "").strip()
-    if not trip:
-        return eph(respond, "Usage: `/carstatus TripName`")
+    channel_id = command["channel_id"]
+    
+    # Get the active trip for this channel
+    trip_info = get_active_trip(channel_id)
+    if not trip_info:
+        return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+    trip = trip_info[0]
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
@@ -539,10 +555,14 @@ def cmd_removecar(ack, respond, command):
 @bolt_app.command("/mycars")
 def cmd_mycars(ack, respond, command):
     ack()
-    trip = (command.get("text") or "").strip()
-    if not trip:
-        return eph(respond, "Usage: `/mycars TripName`")
+    channel_id = command["channel_id"]
     user = command["user_id"]
+    
+    # Get the active trip for this channel
+    trip_info = get_active_trip(channel_id)
+    if not trip_info:
+        return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+    trip = trip_info[0]
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         # Cars I created
@@ -605,10 +625,13 @@ def cmd_mytrips(ack, respond, command):
 @bolt_app.command("/needride")
 def cmd_needride(ack, respond, command):
     ack()
-    trip = (command.get("text") or "").strip()
-    if not trip:
-        return eph(respond, "Usage: `/needride TripName`")
     channel_id = command["channel_id"]
+    
+    # Get the active trip for this channel
+    trip_info = get_active_trip(channel_id)
+    if not trip_info:
+        return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+    trip = trip_info[0]
     
     # Get all members of this channel
     channel_members = get_channel_members(channel_id)
@@ -617,11 +640,6 @@ def cmd_needride(ack, respond, command):
     
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
-        # Check if trip exists in this channel
-        cur.execute("SELECT 1 FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
-        if not cur.fetchone():
-            return eph(respond, f":x: Trip *{trip}* does not exist in this channel.")
         
         # Get channel members who are NOT in any car for this trip
         cur.execute(
