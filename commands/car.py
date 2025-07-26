@@ -84,8 +84,8 @@ def register_car_commands(bolt_app):
         ]
         eph(respond, f"Cars on *{trip}* in this channel:\n" + "\n".join(lines))
 
-    @bolt_app.command("/status")
-    def cmd_status(ack, respond, command):
+    @bolt_app.command("/info")
+    def cmd_info(ack, respond, command):
         ack()
         channel_id = command["channel_id"]
         

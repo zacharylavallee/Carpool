@@ -9,12 +9,12 @@ from utils.helpers import eph, post_announce
 def register_member_commands(bolt_app):
     """Register member management commands"""
     
-    @bolt_app.command("/join")
-    def cmd_join(ack, respond, command):
+    @bolt_app.command("/in")
+    def cmd_in(ack, respond, command):
         ack()
         car_id_str = (command.get("text") or "").strip()
         if not car_id_str:
-            return eph(respond, "Usage: `/join CarID`")
+            return eph(respond, "Usage: `/in CarID`")
         try:
             car_id = int(car_id_str)
         except ValueError:
@@ -102,12 +102,12 @@ def register_member_commands(bolt_app):
         client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":x: Denied <@{user_to_deny}> for car `{car_id}`.", blocks=[])
         client.chat_postMessage(channel=user_to_deny, text=f":x: Your request for car `{car_id}` was denied.")
 
-    @bolt_app.command("/leave")
-    def cmd_leave(ack, respond, command):
+    @bolt_app.command("/out")
+    def cmd_out(ack, respond, command):
         ack()
         car_id_str = (command.get("text") or "").strip()
         if not car_id_str:
-            return eph(respond, "Usage: `/leave CarID`")
+            return eph(respond, "Usage: `/out CarID`")
         try:
             car_id = int(car_id_str)
         except ValueError:
@@ -129,12 +129,12 @@ def register_member_commands(bolt_app):
         eph(respond, f":wave: You left car `{car_id}`.")
         post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
 
-    @bolt_app.command("/kick")
-    def cmd_kick(ack, respond, command):
+    @bolt_app.command("/boot")
+    def cmd_boot(ack, respond, command):
         ack()
         parts = (command.get("text") or "").split()
         if len(parts) != 2:
-            return eph(respond, "Usage: `/kick CarID @user`")
+            return eph(respond, "Usage: `/boot CarID @user`")
         try:
             car_id = int(parts[0])
         except ValueError:
