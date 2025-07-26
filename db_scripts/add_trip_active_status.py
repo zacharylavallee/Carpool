@@ -180,7 +180,7 @@ def migrate_trip_active_status():
             
             # Add unique constraint: only one active trip per channel
             cur.execute("""
-                CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS trips_active_channel_unique 
+                CREATE UNIQUE INDEX IF NOT EXISTS trips_active_channel_unique 
                 ON trips (channel_id) 
                 WHERE active = TRUE
             """)
