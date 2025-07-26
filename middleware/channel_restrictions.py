@@ -71,16 +71,28 @@ def register_channel_restrictions(bolt_app):
                             response_url = body.get("response_url")
                             if response_url:
                                 try:
-                                    # Use the Slack client directly
-                                    from app import bolt_app as app
+                                    # Use urllib for simple HTTP POST to avoid import issues
+                                    import urllib.request
+                                    import urllib.parse
+                                    import json
                                     
-                                    # Send ephemeral response using Slack client
-                                    app.client.chat_postEphemeral(
-                                        channel=channel_id,
-                                        user=body.get("user_id"),
-                                        text=f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
+                                    error_response = {
+                                        "response_type": "ephemeral",
+                                        "text": f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
+                                    }
+                                    
+                                    data = json.dumps(error_response).encode('utf-8')
+                                    req = urllib.request.Request(
+                                        response_url,
+                                        data=data,
+                                        headers={'Content-Type': 'application/json'}
                                     )
-                                    print("✅ Error response sent successfully via Slack client")
+                                    
+                                    with urllib.request.urlopen(req) as response:
+                                        if response.status == 200:
+                                            print("✅ Error response sent successfully via urllib")
+                                        else:
+                                            print(f"❌ Error response failed: {response.status}")
                                         
                                 except Exception as e:
                                     print(f"❌ Failed to send error response: {e}")
