@@ -30,13 +30,30 @@ logger = logging.getLogger(__name__)
 init_db()
 
 # ─── Slack Bolt App ──────────────────────────────────────────────────────
-bolt_app = App(
-    token=os.getenv("SLACK_BOT_TOKEN"),
-    signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
-    client_id=os.getenv("SLACK_CLIENT_ID"),
-    client_secret=os.getenv("SLACK_CLIENT_SECRET"),
-    scopes=["commands", "chat:write", "groups:read", "im:write"]
-)
+from slack_bolt.oauth.oauth_settings import OAuthSettings
+
+# OAuth settings for public distribution (if client ID/secret provided)
+client_id = os.getenv("SLACK_CLIENT_ID")
+client_secret = os.getenv("SLACK_CLIENT_SECRET")
+bot_token = os.getenv("SLACK_BOT_TOKEN")
+
+if client_id and client_secret:
+    # Use OAuth for public distribution
+    oauth_settings = OAuthSettings(
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=["commands", "chat:write", "groups:read", "im:write"]
+    )
+    bolt_app = App(
+        signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
+        oauth_settings=oauth_settings
+    )
+else:
+    # Fallback to direct token (for development)
+    bolt_app = App(
+        token=bot_token,
+        signing_secret=os.getenv("SLACK_SIGNING_SECRET")
+    )
 
 # ─── Register middleware ────────────────────────────────────────────────
 register_channel_restrictions(bolt_app)
