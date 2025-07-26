@@ -75,14 +75,11 @@ def get_username(user_id: str):
         return f"<@{user_id}>"
 
 def get_next_available_car_id(trip: str, channel_id: str):
-    """Find the next available car ID, reusing deleted IDs when possible"""
+    """Find the next available car ID globally, reusing deleted IDs when possible"""
     with get_conn() as conn:
         cur = conn.cursor()
-        # Get all existing car IDs for this trip, ordered
-        cur.execute(
-            "SELECT id FROM cars WHERE trip=%s AND channel_id=%s ORDER BY id",
-            (trip, channel_id)
-        )
+        # Get all existing car IDs across ALL trips, ordered
+        cur.execute("SELECT id FROM cars ORDER BY id")
         existing_ids = [row[0] for row in cur.fetchall()]
         
         # Find the first gap in the sequence, starting from 1
