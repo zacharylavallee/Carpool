@@ -27,6 +27,8 @@ def register_trip_commands(bolt_app):
                 conn.commit()
                 eph(respond, f":round_pushpin: Trip *{trip}* created for this channel.")
             except psycopg2.errors.UniqueViolation:
+                # Rollback the failed transaction
+                conn.rollback()
                 # Channel already has a trip, update it instead
                 cur.execute(
                     "UPDATE trips SET name=%s, created_by=%s, created_at=CURRENT_TIMESTAMP WHERE channel_id=%s",
