@@ -18,6 +18,7 @@ from commands.trip import register_trip_commands
 from commands.car import register_car_commands
 from commands.member import register_member_commands
 from commands.manage import register_manage_commands
+from middleware.channel_restrictions import register_channel_restrictions
 from commands.user import register_user_commands
 
 
@@ -31,8 +32,14 @@ init_db()
 # ─── Slack Bolt App ──────────────────────────────────────────────────────
 bolt_app = App(
     token=os.getenv("SLACK_BOT_TOKEN"),
-    signing_secret=os.getenv("SLACK_SIGNING_SECRET")
+    signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
+    client_id=os.getenv("SLACK_CLIENT_ID"),
+    client_secret=os.getenv("SLACK_CLIENT_SECRET"),
+    scopes=["commands", "chat:write", "groups:read", "im:write"]
 )
+
+# ─── Register middleware ────────────────────────────────────────────────
+register_channel_restrictions(bolt_app)
 
 # ─── Register all command modules ────────────────────────────────────────
 register_help_commands(bolt_app)
@@ -50,6 +57,15 @@ handler = SlackRequestHandler(bolt_app)
 # ─── WSGI entrypoint ─────────────────────────────────────────────────────
 @flask_app.route("/slack/events", methods=["POST"])
 def slack_events():
+    return handler.handle(request)
+
+# ─── OAuth endpoints for public distribution ─────────────────────────────
+@flask_app.route("/slack/install", methods=["GET"])
+def install():
+    return handler.handle(request)
+
+@flask_app.route("/slack/oauth_redirect", methods=["GET"])
+def oauth_redirect():
     return handler.handle(request)
 
 # ─── Health‑check endpoint ───────────────────────────────────────────────
