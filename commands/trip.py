@@ -140,51 +140,6 @@ def register_trip_commands(bolt_app):
                 )
                 conn.commit()
                 eph(respond, f":round_pushpin: Trip *{trip}* created and activated for this channel.")
-                
-                # Original creator is still in channel, send approval request
-                from app import bolt_app as app
-                try:
-                    app.client.chat_postMessage(
-                        channel=original_creator,
-                        text=f":warning: <@{user}> wants to replace your trip *{existing_trip_name}* with *{trip}* in <#{channel_id}>.",
-                        blocks=[
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f":warning: <@{user}> wants to replace your trip *{existing_trip_name}* with *{trip}* in <#{channel_id}>."
-                                }
-                            },
-                            {
-                                "type": "actions",
-                                "elements": [
-                                    {
-                                        "type": "button",
-                                        "text": {"type": "plain_text", "text": "Approve"},
-                                        "style": "primary",
-                                        "action_id": "approve_trip_overwrite",
-                                        "value": f"{channel_id}:{user}:{trip}"
-                                    },
-                                    {
-                                        "type": "button",
-                                        "text": {"type": "plain_text", "text": "Deny"},
-                                        "style": "danger",
-                                        "action_id": "deny_trip_overwrite",
-                                        "value": f"{channel_id}:{user}:{trip}"
-                                    }
-                                ]
-                            }
-                        ]
-                    )
-                    eph(respond, f":hourglass_flowing_sand: Approval request sent to <@{original_creator}> (original trip creator). They need to approve before *{trip}* can replace *{existing_trip_name}*.")
-                except Exception as e:
-                    # If we can't send DM, fall back to allowing the overwrite
-                    cur.execute(
-                        "UPDATE trips SET name=%s, created_by=%s, created_at=CURRENT_TIMESTAMP WHERE channel_id=%s",
-                        (trip, user, channel_id)
-                    )
-                    conn.commit()
-                    eph(respond, f":round_pushpin: Trip *{trip}* replaced the existing trip (couldn't send approval request).")
 
     @bolt_app.action("approve_trip_overwrite")
     def act_approve_trip_overwrite(ack, body, client):
