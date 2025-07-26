@@ -25,6 +25,20 @@ def register_trip_commands(bolt_app):
         
         with get_conn() as conn:
             cur = conn.cursor()
+            
+            # First check if trip name already exists ANYWHERE (global uniqueness)
+            cur.execute("SELECT channel_id, created_by FROM trips WHERE name=%s", (trip,))
+            existing_trip = cur.fetchone()
+            
+            if existing_trip:
+                existing_channel_id, existing_creator = existing_trip
+                if existing_channel_id == channel_id:
+                    # Trip exists in this channel - handle replacement logic
+                    pass  # Continue to existing replacement logic below
+                else:
+                    # Trip exists in a different channel - not allowed
+                    return eph(respond, f":x: Trip name '*{trip}*' is already used in <#{existing_channel_id}> by <@{existing_creator}>. Please choose a different name.")
+            
             try:
                 # Try to insert new trip (will fail if channel already has a trip)
                 cur.execute(

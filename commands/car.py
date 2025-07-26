@@ -106,32 +106,45 @@ def register_car_commands(bolt_app):
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             
-            # Get all trips in this channel
+            # Get ALL trips across ALL channels
             cur.execute(
-                "SELECT name, created_by, created_at FROM trips WHERE channel_id=%s ORDER BY created_at DESC",
-                (channel_id,)
+                "SELECT name, created_by, created_at, channel_id FROM trips ORDER BY created_at DESC"
             )
             all_trips = cur.fetchall()
             
             if not all_trips:
-                return eph(respond, ":x: No trips created in this channel yet. Create one with `/trip TripName` first.")
+                return eph(respond, ":x: No trips created yet. Create one with `/trip TripName` first.")
             
-            # Get the active trip (most recent)
-            active_trip = all_trips[0]['name']
+            # Get the active trip for THIS channel (if any)
+            cur.execute(
+                "SELECT name FROM trips WHERE channel_id=%s ORDER BY created_at DESC LIMIT 1",
+                (channel_id,)
+            )
+            active_trip_row = cur.fetchone()
+            active_trip = active_trip_row['name'] if active_trip_row else None
             
             # Build response starting with trip list
             response_parts = []
             
-            # Show all trips
-            if len(all_trips) == 1:
-                response_parts.append(f":round_pushpin: **Active Trip:** *{active_trip}*")
+            # Show all trips across all channels
+            response_parts.append(":round_pushpin: **All Trips Across All Channels:**")
+            
+            for trip in all_trips:
+                # Check if this trip is active in this channel
+                is_active_here = (trip['channel_id'] == channel_id and trip['name'] == active_trip)
+                status = " (active in this channel)" if is_active_here else ""
+                
+                response_parts.append(f"• *{trip['name']}* by <@{trip['created_by']}> in <#{trip['channel_id']}>{status}")
+            
+            response_parts.append("")
+            
+            # Show car details for active trip in THIS channel (if any)
+            if active_trip:
+                response_parts.append(f":car: **Car Details for Active Trip in This Channel:** *{active_trip}*")
             else:
-                response_parts.append(":round_pushpin: **All Trips in this Channel:**")
-                for i, trip in enumerate(all_trips):
-                    status = " (active)" if i == 0 else ""
-                    response_parts.append(f"• *{trip['name']}* by <@{trip['created_by']}>{status}")
-                response_parts.append("")
-                response_parts.append(f":car: **Car Details for Active Trip:** *{active_trip}*")
+                response_parts.append(":information_source: **No active trip in this channel yet.** Use `/trip TripName` to create one.")
+                eph(respond, "\n".join(response_parts))
+                return
             
             # Get cars for the active trip
             cur.execute(
