@@ -6,6 +6,23 @@ from config.database import get_conn
 from utils.helpers import eph, get_channel_members
 from utils.channel_guard import check_bot_channel_access
 
+def is_channel_active(channel_id):
+    """Check if a channel is still active (not archived/deleted)"""
+    try:
+        from app import bolt_app as app
+        channel_info = app.client.conversations_info(channel=channel_id)
+        if channel_info["ok"]:
+            channel = channel_info["channel"]
+            # Channel is inactive if it's archived or deleted
+            is_archived = channel.get("is_archived", False)
+            return not is_archived
+        else:
+            # If we can't get channel info, assume it's deleted/inaccessible
+            return False
+    except Exception:
+        # Any exception means we can't access the channel
+        return False
+
 def register_trip_commands(bolt_app):
     """Register trip management commands"""
     
@@ -36,8 +53,34 @@ def register_trip_commands(bolt_app):
                     # Trip exists in this channel - handle replacement logic
                     pass  # Continue to existing replacement logic below
                 else:
-                    # Trip exists in a different channel - not allowed
-                    return eph(respond, f":x: Trip name '*{trip}*' is already used in <#{existing_channel_id}> by <@{existing_creator}>. Please choose a different name.")
+                    # Trip exists in a different channel - check if that channel is still active
+                    if is_channel_active(existing_channel_id):
+                        # Original channel is still active - not allowed to reuse name
+                        return eph(respond, f":x: Trip name '*{trip}*' is already used in <#{existing_channel_id}> by <@{existing_creator}>. Please choose a different name.")
+                    else:
+                        # Original channel is archived/deleted - allow reuse by deleting old trip
+                        print(f"🗑️ Cleaning up trip '{trip}' from inactive channel {existing_channel_id}")
+                        
+                        # Cascade delete the old trip and all its data
+                        cur.execute(
+                            """
+                            DELETE FROM car_members 
+                            WHERE car_id IN (SELECT id FROM cars WHERE trip = %s)
+                            """,
+                            (trip,)
+                        )
+                        cur.execute(
+                            """
+                            DELETE FROM join_requests 
+                            WHERE car_id IN (SELECT id FROM cars WHERE trip = %s)
+                            """,
+                            (trip,)
+                        )
+                        cur.execute("DELETE FROM cars WHERE trip = %s", (trip,))
+                        cur.execute("DELETE FROM trips WHERE name = %s", (trip,))
+                        conn.commit()
+                        
+                        print(f"✅ Cleaned up old trip '{trip}' from inactive channel")
             
             try:
                 # Try to insert new trip (will fail if channel already has a trip)
@@ -212,25 +255,28 @@ def register_trip_commands(bolt_app):
             if trip_creator != user:
                 return eph(respond, f":x: Only the trip creator can delete '*{trip_name}*'.")
             
-            # Check if there are any cars on this trip
+            # Check if there are any cars on this trip for informational purposes
             cur.execute(
                 "SELECT COUNT(*) FROM cars WHERE trip=%s",
                 (trip_name,)
             )
             car_count = cur.fetchone()[0]
-            
-            if car_count > 0:
-                return eph(respond, f":x: Cannot delete trip '*{trip_name}*' - it has {car_count} car(s). Delete all cars first.")
+        
+        # Create appropriate warning message based on car count
+        if car_count > 0:
+            warning_text = f":warning: Are you sure you want to delete trip '*{trip_name}*'? This will also delete **{car_count} car(s)** and all their members. This action cannot be undone."
+        else:
+            warning_text = f":warning: Are you sure you want to delete trip '*{trip_name}*'? This action cannot be undone."
         
         # Send confirmation prompt for trip deletion
         respond({
-            "text": f":warning: Are you sure you want to delete trip '*{trip_name}*'?",
+            "text": warning_text,
             "blocks": [
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f":warning: Are you sure you want to delete trip '*{trip_name}*'? This action cannot be undone."
+                        "text": warning_text
                     }
                 },
                 {
@@ -300,44 +346,84 @@ def register_trip_commands(bolt_app):
                     respond(f":x: Only the trip creator can delete '*{trip_name}*'.")
                 return
             
-            # Check if trip has any cars
+            # Get information about cars for the deletion announcement
             cur.execute(
                 "SELECT COUNT(*) FROM cars WHERE trip=%s",
                 (trip_name,)
             )
             car_count = cur.fetchone()[0]
             
-            if car_count > 0:
-                try:
-                    client.chat_update(
-                        channel=body["channel"]["id"], 
-                        ts=body["container"]["message_ts"], 
-                        text=f":x: Cannot delete trip '*{trip_name}*' - it has {car_count} car(s). Delete all cars first.", 
-                        blocks=[]
-                    )
-                except Exception:
-                    # Fallback to respond if message update fails
-                    respond(f":x: Cannot delete trip '*{trip_name}*' - it has {car_count} car(s). Delete all cars first.")
-                return
-            
-            # Delete the trip
+            # Get total member count across all cars for the announcement
             cur.execute(
-                "DELETE FROM trips WHERE name=%s",
+                """
+                SELECT COUNT(*) FROM car_members cm
+                JOIN cars c ON cm.car_id = c.id
+                WHERE c.trip = %s
+                """,
+                (trip_name,)
+            )
+            member_count = cur.fetchone()[0]
+            
+            # Cascade delete: Remove all related data in correct order
+            # 1. Delete all car members
+            cur.execute(
+                """
+                DELETE FROM car_members 
+                WHERE car_id IN (SELECT id FROM cars WHERE trip = %s)
+                """,
+                (trip_name,)
+            )
+            
+            # 2. Delete all join requests for cars in this trip
+            cur.execute(
+                """
+                DELETE FROM join_requests 
+                WHERE car_id IN (SELECT id FROM cars WHERE trip = %s)
+                """,
+                (trip_name,)
+            )
+            
+            # 3. Delete all cars
+            cur.execute(
+                "DELETE FROM cars WHERE trip = %s",
+                (trip_name,)
+            )
+            
+            # 4. Finally delete the trip
+            cur.execute(
+                "DELETE FROM trips WHERE name = %s",
                 (trip_name,)
             )
             conn.commit()
+        
+        # Create appropriate success message based on what was deleted
+        if car_count > 0:
+            success_text = f":white_check_mark: Trip '*{trip_name}*' has been deleted along with {car_count} car(s) and {member_count} membership(s)."
+        else:
+            success_text = f":white_check_mark: Trip '*{trip_name}*' has been deleted."
         
         # Update the message to show completion with error handling
         try:
             client.chat_update(
                 channel=body["channel"]["id"], 
                 ts=body["container"]["message_ts"], 
-                text=f":white_check_mark: Trip '*{trip_name}*' has been deleted.", 
+                text=success_text, 
                 blocks=[]
             )
         except Exception:
             # Fallback to respond if message update fails
-            respond(f":white_check_mark: Trip '*{trip_name}*' has been deleted.")
+            respond(success_text)
+        
+        # Post announcement to the trip's original channel if it still exists
+        try:
+            from app import bolt_app as app
+            app.client.chat_postMessage(
+                channel=trip_channel_id,
+                text=f":boom: Trip '*{trip_name}*' was deleted by <@{user_id}> along with all its cars and members."
+            )
+        except Exception:
+            # Channel might be archived/deleted, which is fine
+            pass
 
     @bolt_app.action("cancel_delete_trip")
     def handle_cancel_delete_trip(ack, body, client, respond):
