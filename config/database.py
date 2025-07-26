@@ -32,11 +32,11 @@ def init_db():
         # Trips
         cur.execute("""
         CREATE TABLE IF NOT EXISTS trips (
-            name TEXT,
-            channel_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            channel_id TEXT NOT NULL UNIQUE,
             created_by TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY(name, channel_id)
+            PRIMARY KEY(channel_id)
         )""")
         # Cars
         cur.execute("""
@@ -48,7 +48,7 @@ def init_db():
             seats INTEGER NOT NULL,
             created_by TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(trip, channel_id) REFERENCES trips(name, channel_id) ON DELETE CASCADE,
+            FOREIGN KEY(channel_id) REFERENCES trips(channel_id) ON DELETE CASCADE,
             UNIQUE(trip, channel_id, created_by)
         )""")
         # Memberships
