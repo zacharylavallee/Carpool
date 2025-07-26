@@ -181,12 +181,19 @@ def register_member_commands(bolt_app):
             return
         
         user_mention = (command.get("text") or "").strip()
+        
+        # Debug: Log what we received
+        print(f"🔍 /boot command received text: '{user_mention}'")
+        print(f"🔍 /boot command text length: {len(user_mention)}")
+        print(f"🔍 /boot command text repr: {repr(user_mention)}")
+        
         if not user_mention:
             return eph(respond, "Usage: `/boot @user`")
         
         # Extract user ID from mention
         if not user_mention.startswith("<@") or not user_mention.endswith(">"):
-            return eph(respond, ":x: Please mention a user like @username")
+            print(f"❌ /boot mention format invalid: starts with '<@': {user_mention.startswith('<@')}, ends with '>': {user_mention.endswith('>')}")
+            return eph(respond, f":x: Please mention a user like @username (received: '{user_mention}')")
         
         # Remove <@ and >, then handle both formats: <@U123> and <@U123|username>
         mention_content = user_mention[2:-1]
