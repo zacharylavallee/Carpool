@@ -131,9 +131,14 @@ class CodebaseAnalyzer:
     
     def _is_valid_table_name(self, name):
         """Check if a name looks like a valid table name"""
-        # Filter out common false positives
+        # Filter out common false positives and system tables
         invalid_names = {
-            'information_schema', 'pg_sequences', 'pg_catalog',
+            # PostgreSQL system schemas and tables
+            'information_schema', 'pg_sequences', 'pg_catalog', 'pg_class',
+            'pg_namespace', 'pg_attribute', 'pg_constraint', 'pg_index',
+            'pg_stat_user_tables', 'pg_tables', 'pg_views', 'pg_indexes',
+            
+            # SQL keywords and common words
             'current_timestamp', 'not', 'null', 'true', 'false',
             'and', 'or', 'where', 'order', 'by', 'group', 'having',
             'limit', 'offset', 'distinct', 'all', 'any', 'some',
@@ -142,15 +147,23 @@ class CodebaseAnalyzer:
             'union', 'intersect', 'except', 'case', 'when', 'then',
             'else', 'end', 'if', 'else', 'elsif', 'while', 'for',
             'do', 'begin', 'commit', 'rollback', 'transaction',
+            
+            # Common English words that might appear in comments
             'it', 'your', 'their', 'seat', 'statements', 'failed',
             'sequence', 'the', 'these', 'carid', 'a', 'an', 'to',
-            'from', 'with', 'without', 'into', 'onto', 'upon'
+            'from', 'with', 'without', 'into', 'onto', 'upon', 'this',
+            'that', 'which', 'what', 'who', 'when', 'where', 'why',
+            'how', 'can', 'will', 'would', 'should', 'could', 'may',
+            'might', 'must', 'shall', 'have', 'has', 'had', 'been',
+            'being', 'are', 'was', 'were', 'am', 'is', 'be'
         }
         
         # Must be a valid identifier and not in the invalid list
+        # Also exclude anything that starts with pg_ (PostgreSQL system objects)
         return (name.isidentifier() and 
                 len(name) > 1 and 
                 name.lower() not in invalid_names and
+                not name.lower().startswith('pg_') and
                 not name.isdigit())
     
     def _parse_sql_operation(self, sql, file_path):
@@ -278,20 +291,26 @@ class CodebaseAnalyzer:
                     "inferred_from_operations": True
                 }
             
-            # Look for column references in operations
+            # Look for column references in SQL operations only
+            # Be more conservative about column inference
             for op in operations:
-                if "channel_id" in op["sql_snippet"].lower():
-                    self._add_inferred_column(table_name, "channel_id", "TEXT")
-                if "user_id" in op["sql_snippet"].lower():
-                    self._add_inferred_column(table_name, "user_id", "TEXT")
-                if "car_id" in op["sql_snippet"].lower():
-                    self._add_inferred_column(table_name, "car_id", "INTEGER")
-                if "trip" in op["sql_snippet"].lower() and table_name == "cars":
-                    self._add_inferred_column(table_name, "trip", "TEXT")
-                if "seats" in op["sql_snippet"].lower():
-                    self._add_inferred_column(table_name, "seats", "INTEGER")
-                if "name" in op["sql_snippet"].lower():
-                    self._add_inferred_column(table_name, "name", "TEXT")
+                sql_snippet = op["sql_snippet"].lower()
+                
+                # Only infer columns from INSERT/UPDATE/SELECT operations
+                if op["operation"] in ["INSERT", "UPDATE", "SELECT"]:
+                    # Look for explicit column patterns like "column_name =" or "(column_name,"
+                    if re.search(r'\bchannels?_id\s*[=,)]', sql_snippet):
+                        self._add_inferred_column(table_name, "channel_id", "TEXT")
+                    if re.search(r'\busers?_id\s*[=,)]', sql_snippet) and table_name != "cars":
+                        self._add_inferred_column(table_name, "user_id", "TEXT")
+                    if re.search(r'\bcars?_id\s*[=,)]', sql_snippet) and table_name != "cars":
+                        self._add_inferred_column(table_name, "car_id", "INTEGER")
+                    if re.search(r'\btrip\s*[=,)]', sql_snippet) and table_name == "cars":
+                        self._add_inferred_column(table_name, "trip", "TEXT")
+                    if re.search(r'\bseats\s*[=,)]', sql_snippet):
+                        self._add_inferred_column(table_name, "seats", "INTEGER")
+                    if re.search(r'\bname\s*[=,)]', sql_snippet):
+                        self._add_inferred_column(table_name, "name", "TEXT")
     
     def _add_inferred_column(self, table_name, column_name, data_type):
         """Add an inferred column if it doesn't already exist"""
