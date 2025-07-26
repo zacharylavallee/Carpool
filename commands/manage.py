@@ -19,40 +19,88 @@ def register_manage_commands(bolt_app):
         if not check_bot_channel_access(channel_id, respond):
             return
         
-        parts = (command.get("text") or "").split()
-        if len(parts) != 2 or not parts[1].startswith("seats="):
-            return eph(respond, "Usage: `/update CarID seats=X` (e.g., `/update 1 seats=5`)") 
+        seats_str = (command.get("text") or "").strip()
+        if not seats_str:
+            return eph(respond, "Usage: `/update seats` (e.g., `/update 4`)") 
+        
         try:
-            car_id = int(parts[0])
-            new_seats = int(parts[1].split("=")[1])
-        except (ValueError, IndexError):
-            return eph(respond, ":x: Invalid format. Use `/update CarID seats=X`")
+            new_seats = int(seats_str)
+        except ValueError:
+            return eph(respond, ":x: Seat count must be a number.")
+        
+        if new_seats < 1:
+            return eph(respond, ":x: Seat count must be at least 1.")
+        
         user = command["user_id"]
         
+        # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT created_by, trip FROM cars WHERE id=%s", (car_id,))
-            row = cur.fetchone()
-        if not row:
-            return eph(respond, f":x: Car `{car_id}` does not exist.")
-        if row[0] != user:
-            return eph(respond, ":x: Only the car creator can update it.")
-        trip = row[1]
-        
-        # Check if new seat count is valid (not less than current members)
-        with get_conn() as conn:
-            cur = conn.cursor()
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Find the user's car in this trip
+            cur.execute(
+                "SELECT id, name, seats FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
+                (channel_id, trip, user)
+            )
+            car_row = cur.fetchone()
+            
+            if not car_row:
+                return eph(respond, f":x: You don't have a car on *{trip}* to update.")
+            
+            car_id, car_name, current_seats = car_row
+            
+            # Check current member count
             cur.execute("SELECT COUNT(*) FROM car_members WHERE car_id=%s", (car_id,))
             current_members = cur.fetchone()[0]
-        if new_seats < current_members:
-            return eph(respond, f":x: Cannot reduce seats to {new_seats}. Car has {current_members} members.")
+            
+            # Validate seat reduction
+            if new_seats < current_members:
+                return eph(respond, f":x: Cannot reduce seats to {new_seats}. Your car has {current_members} members. Remove some members first with `/boot @user`.")
         
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("UPDATE cars SET seats=%s WHERE id=%s", (new_seats, car_id))
-            conn.commit()
-        eph(respond, f":white_check_mark: You updated car `{car_id}` to {new_seats} seats.")
-        post_announce(trip, channel_id, f":gear: <@{user}> updated car `{car_id}` to {new_seats} seats on *{trip}*.")
+        # Send confirmation prompt for seat update
+        if new_seats == current_seats:
+            return eph(respond, f":information_source: Your car (*{car_name}*) already has {new_seats} seats. No change needed.")
+        
+        change_text = f"from {current_seats} to {new_seats}"
+        member_text = f" (with {current_members} members)" if current_members > 0 else " (empty)"
+        
+        respond({
+            "text": f":gear: Update your car *{car_name}* seat count {change_text}?",
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":gear: Update your car *{car_name}*{member_text} seat count {change_text}?"
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Yes, Update"},
+                            "style": "primary",
+                            "action_id": "confirm_update_car",
+                            "value": f"{car_id}:{channel_id}:{trip}:{new_seats}:{current_seats}"
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Cancel"},
+                            "action_id": "cancel_update_car",
+                            "value": f"{car_id}"
+                        }
+                    ]
+                }
+            ]
+        })
 
     @bolt_app.command("/delete")
     def cmd_delete(ack, respond, command):
@@ -63,35 +111,182 @@ def register_manage_commands(bolt_app):
         if not check_bot_channel_access(channel_id, respond):
             return
         
-        car_id_str = (command.get("text") or "").strip()
-        if not car_id_str:
-            return eph(respond, "Usage: `/delete CarID`")
-        try:
-            car_id = int(car_id_str)
-        except ValueError:
-            return eph(respond, ":x: CarID must be a number.")
         user = command["user_id"]
         
+        # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT created_by, name, trip FROM cars WHERE id=%s", (car_id,))
-            row = cur.fetchone()
-        if not row:
-            return eph(respond, f":x: Car `{car_id}` does not exist.")
-        if row[0] != user:
-            return eph(respond, ":x: Only the car creator can delete it.")
-        creator, name, trip = row
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Find the user's car in this trip
+            cur.execute(
+                "SELECT id, name FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
+                (channel_id, trip, user)
+            )
+            car_row = cur.fetchone()
+            
+            if not car_row:
+                return eph(respond, f":x: You don't have a car on *{trip}* to delete.")
+            
+            car_id, car_name = car_row
+            
+            # Check how many members are in the car
+            cur.execute("SELECT COUNT(*) FROM car_members WHERE car_id=%s", (car_id,))
+            member_count = cur.fetchone()[0]
         
-        # Get all members to notify them
+        # Send confirmation prompt
+        member_text = f" (with {member_count} members)" if member_count > 0 else " (empty)"
+        respond({
+            "text": f":warning: Are you sure you want to delete your car *{car_name}*{member_text}?",
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":warning: Are you sure you want to delete your car *{car_name}*{member_text}?"
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Yes, Delete"},
+                            "style": "danger",
+                            "action_id": "confirm_delete_car",
+                            "value": f"{car_id}:{channel_id}:{trip}"
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Cancel"},
+                            "action_id": "cancel_delete_car",
+                            "value": f"{car_id}"
+                        }
+                    ]
+                }
+            ]
+        })
+
+    @bolt_app.action("confirm_delete_car")
+    def handle_confirm_delete_car(ack, body, client):
+        ack()
+        car_id, channel_id, trip = body["actions"][0]["value"].split(":")
+        car_id = int(car_id)
+        user = body["user"]["id"]
+        
         with get_conn() as conn:
             cur = conn.cursor()
+            
+            # Verify the user still owns this car
+            cur.execute("SELECT name, created_by FROM cars WHERE id=%s", (car_id,))
+            car_row = cur.fetchone()
+            
+            if not car_row or car_row[1] != user:
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=":x: Car no longer exists or you don't own it.", 
+                    blocks=[]
+                )
+                return
+            
+            car_name = car_row[0]
+            
+            # Get all members to notify them
             cur.execute("SELECT user_id FROM car_members WHERE car_id=%s", (car_id,))
             members = [row[0] for row in cur.fetchall()]
+            
+            # Delete the car (CASCADE will handle car_members)
             cur.execute("DELETE FROM cars WHERE id=%s", (car_id,))
             conn.commit()
         
+        # Update the message to show completion
+        client.chat_update(
+            channel=body["channel"]["id"], 
+            ts=body["container"]["message_ts"], 
+            text=f":white_check_mark: Your car (*{car_name}*) has been deleted.", 
+            blocks=[]
+        )
+        
         # Notify all members
         for member in members:
-            bolt_app.client.chat_postMessage(channel=member, text=f":wastebasket: Car `{car_id}` (*{name}*) on *{trip}* was deleted by its creator.")
-        eph(respond, f":white_check_mark: You deleted car `{car_id}` (*{name}*).")
-        post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted car `{car_id}` (*{name}*) on *{trip}*.")
+            if member != user:  # Don't notify the car creator
+                client.chat_postMessage(
+                    channel=member, 
+                    text=f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator."
+                )
+        
+        # Post announcement
+        post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted their car (*{car_name}*) on *{trip}*.")
+
+    @bolt_app.action("cancel_delete_car")
+    def handle_cancel_delete_car(ack, body, client):
+        ack()
+        client.chat_update(
+            channel=body["channel"]["id"], 
+            ts=body["container"]["message_ts"], 
+            text=":information_source: Car deletion cancelled.", 
+            blocks=[]
+        )
+
+    @bolt_app.action("confirm_update_car")
+    def handle_confirm_update_car(ack, body, client):
+        ack()
+        car_id, channel_id, trip, new_seats, current_seats = body["actions"][0]["value"].split(":")
+        car_id, new_seats, current_seats = int(car_id), int(new_seats), int(current_seats)
+        user = body["user"]["id"]
+        
+        with get_conn() as conn:
+            cur = conn.cursor()
+            
+            # Verify the user still owns this car
+            cur.execute("SELECT name, created_by FROM cars WHERE id=%s", (car_id,))
+            car_row = cur.fetchone()
+            
+            if not car_row or car_row[1] != user:
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=":x: Car no longer exists or you don't own it.", 
+                    blocks=[]
+                )
+                return
+            
+            car_name = car_row[0]
+            
+            # Update the car's seat count
+            cur.execute("UPDATE cars SET seats=%s WHERE id=%s", (new_seats, car_id))
+            conn.commit()
+        
+        # Provide feedback based on whether seats increased or decreased
+        if new_seats > current_seats:
+            feedback = f":white_check_mark: Your car (*{car_name}*) now has {new_seats} seats (increased from {current_seats}). Extra spots are available for new members!"
+        else:
+            feedback = f":white_check_mark: Your car (*{car_name}*) now has {new_seats} seats (reduced from {current_seats}). All current members remain."
+        
+        # Update the message to show completion
+        client.chat_update(
+            channel=body["channel"]["id"], 
+            ts=body["container"]["message_ts"], 
+            text=feedback, 
+            blocks=[]
+        )
+        
+        # Post announcement
+        post_announce(trip, channel_id, f":gear: <@{user}> updated their car (*{car_name}*) to {new_seats} seats on *{trip}*.")
+
+    @bolt_app.action("cancel_update_car")
+    def handle_cancel_update_car(ack, body, client):
+        ack()
+        client.chat_update(
+            channel=body["channel"]["id"], 
+            ts=body["container"]["message_ts"], 
+            text=":information_source: Car update cancelled.", 
+            blocks=[]
+        )

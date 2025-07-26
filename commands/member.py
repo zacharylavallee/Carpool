@@ -117,56 +117,104 @@ def register_member_commands(bolt_app):
         if not check_bot_channel_access(channel_id, respond):
             return
         
-        car_id_str = (command.get("text") or "").strip()
-        if not car_id_str:
-            return eph(respond, "Usage: `/out CarID`")
-        try:
-            car_id = int(car_id_str)
-        except ValueError:
-            return eph(respond, ":x: CarID must be a number.")
         user = command["user_id"]
         
+        # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT trip FROM cars WHERE id=%s", (car_id,))
-            row = cur.fetchone()
-        if not row:
-            return eph(respond, f":x: Car `{car_id}` does not exist.")
-        trip = row[0]
-        with get_conn() as conn:
-            cur = conn.cursor()
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Find which car the user is in for this trip
+            cur.execute(
+                """
+                SELECT c.id, c.name, c.created_by 
+                FROM cars c
+                JOIN car_members cm ON c.id = cm.car_id
+                WHERE c.channel_id=%s AND c.trip=%s AND cm.user_id=%s
+                """,
+                (channel_id, trip, user)
+            )
+            car_row = cur.fetchone()
+            
+            if not car_row:
+                return eph(respond, f":x: You are not in any car on *{trip}*.")
+            
+            car_id, car_name, car_creator = car_row
+            
+            # Remove the user from the car
             cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user))
             conn.commit()
-        eph(respond, f":white_check_mark: You left car `{car_id}`.")
+        
+        eph(respond, f":white_check_mark: You left *{car_name}* (car `{car_id}`).")
         post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
 
     @bolt_app.command("/boot")
     def cmd_boot(ack, respond, command):
         ack()
-        parts = (command.get("text") or "").split()
-        if len(parts) != 2:
-            return eph(respond, "Usage: `/boot CarID @user`")
-        try:
-            car_id = int(parts[0])
-        except ValueError:
-            return eph(respond, ":x: CarID must be a number.")
-        target_user = parts[1].strip("<@>")
-        user = command["user_id"]
         channel_id = command["channel_id"]
         
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
+        user_mention = (command.get("text") or "").strip()
+        if not user_mention:
+            return eph(respond, "Usage: `/boot @user`")
+        
+        # Extract user ID from mention
+        if not user_mention.startswith("<@") or not user_mention.endswith(">"):
+            return eph(respond, ":x: Please mention a user like @username")
+        target_user = user_mention[2:-1]  # Remove <@ and >
+        
+        user = command["user_id"]
+        
+        # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT created_by, trip FROM cars WHERE id=%s", (car_id,))
-            row = cur.fetchone()
-        if not row:
-            return eph(respond, f":x: Car `{car_id}` does not exist.")
-        if row[0] != user:
-            return eph(respond, ":x: Only the car creator can remove members.")
-        trip = row[1]
-        with get_conn() as conn:
-            cur = conn.cursor()
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Find the user's car in this trip
+            cur.execute(
+                "SELECT id, name FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
+                (channel_id, trip, user)
+            )
+            car_row = cur.fetchone()
+            
+            if not car_row:
+                return eph(respond, f":x: You don't have a car on *{trip}* to remove members from.")
+            
+            car_id, car_name = car_row
+            
+            # Check if target user is actually in the car
+            cur.execute(
+                "SELECT 1 FROM car_members WHERE car_id=%s AND user_id=%s",
+                (car_id, target_user)
+            )
+            if not cur.fetchone():
+                return eph(respond, f":x: <@{target_user}> is not in your car.")
+            
+            # Remove the user from the car
             cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, target_user))
             conn.commit()
-        eph(respond, f":white_check_mark: You removed <@{target_user}> from car `{car_id}`.")
-        bolt_app.client.chat_postMessage(channel=target_user, text=f":boot: You were removed from car `{car_id}` on *{trip}*.")
-        post_announce(trip, channel_id, f":boot: <@{user}> removed <@{target_user}> from car `{car_id}` on *{trip}*.")
+        
+        eph(respond, f":white_check_mark: You removed <@{target_user}> from your car (*{car_name}*).")
+        bolt_app.client.chat_postMessage(
+            channel=target_user, 
+            text=f":boot: You were removed from *{car_name}* on *{trip}*."
+        )
+        post_announce(
+            trip, channel_id, 
+            f":boot: <@{user}> removed <@{target_user}> from *{car_name}* on *{trip}*."
+        )

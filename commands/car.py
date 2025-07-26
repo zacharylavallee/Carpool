@@ -103,33 +103,58 @@ def register_car_commands(bolt_app):
         if not check_bot_channel_access(channel_id, respond):
             return
         
-        # Get the active trip for this channel
-        trip_info = get_active_trip(channel_id)
-        if not trip_info:
-            return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
-        trip = trip_info[0]
-        
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            
+            # Get all trips in this channel
+            cur.execute(
+                "SELECT name, created_by, created_at FROM trips WHERE channel_id=%s ORDER BY created_at DESC",
+                (channel_id,)
+            )
+            all_trips = cur.fetchall()
+            
+            if not all_trips:
+                return eph(respond, ":x: No trips created in this channel yet. Create one with `/trip TripName` first.")
+            
+            # Get the active trip (most recent)
+            active_trip = all_trips[0]['name']
+            
+            # Build response starting with trip list
+            response_parts = []
+            
+            # Show all trips
+            if len(all_trips) == 1:
+                response_parts.append(f":round_pushpin: **Active Trip:** *{active_trip}*")
+            else:
+                response_parts.append(":round_pushpin: **All Trips in this Channel:**")
+                for i, trip in enumerate(all_trips):
+                    status = " (active)" if i == 0 else ""
+                    response_parts.append(f"• *{trip['name']}* by <@{trip['created_by']}>{status}")
+                response_parts.append("")
+                response_parts.append(f":car: **Car Details for Active Trip:** *{active_trip}*")
+            
+            # Get cars for the active trip
             cur.execute(
                 """
                 SELECT c.id, c.name, c.seats, ARRAY_AGG(m.user_id) AS members
                 FROM cars c
                 LEFT JOIN car_members m ON m.car_id=c.id
-                WHERE c.trip=%s
+                WHERE c.trip=%s AND c.channel_id=%s
                 GROUP BY c.id, c.name, c.seats
                 ORDER BY c.id
-                """, (trip,)
+                """, (active_trip, channel_id)
             )
             cars = cur.fetchall()
-        if not cars:
-            return eph(respond, f"No cars on *{trip}* yet.")
-        lines = []
-        for c in cars:
-            members = [m for m in c['members'] if m is not None]
-            if members:
-                member_mentions = " ".join([f"<@{m}>" for m in members])
-                lines.append(f"• `{c['id']}`: *{c['name']}* ({len(members)}/{c['seats']}) — {member_mentions}")
+            
+            if not cars:
+                response_parts.append(f"No cars on *{active_trip}* yet.")
             else:
-                lines.append(f"• `{c['id']}`: *{c['name']}* (0/{c['seats']}) — empty")
-        eph(respond, f"Car status for *{trip}*:\n" + "\n".join(lines))
+                for c in cars:
+                    members = [m for m in c['members'] if m is not None]
+                    if members:
+                        member_mentions = " ".join([f"<@{m}>" for m in members])
+                        response_parts.append(f"• `{c['id']}`: *{c['name']}* ({len(members)}/{c['seats']}) — {member_mentions}")
+                    else:
+                        response_parts.append(f"• `{c['id']}`: *{c['name']}* (0/{c['seats']}) — empty")
+        
+        eph(respond, "\n".join(response_parts))

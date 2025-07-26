@@ -164,4 +164,143 @@ def register_trip_commands(bolt_app):
             channel=requesting_user,
             text=f":x: <@{denying_user}> denied your request to replace their trip with *{new_trip_name}* in <#{channel_id}>."
         )
+    
+    @bolt_app.command("/deletetrip")
+    def cmd_deletetrip(ack, respond, command):
+        ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
+        trip_name = (command.get("text") or "").strip()
+        if not trip_name:
+            return eph(respond, "Usage: `/deletetrip TripName`")
+        
+        user = command["user_id"]
+        
+        with get_conn() as conn:
+            cur = conn.cursor()
+            
+            # Check if trip exists and user is the creator
+            cur.execute(
+                "SELECT created_by FROM trips WHERE channel_id=%s AND name=%s",
+                (channel_id, trip_name)
+            )
+            row = cur.fetchone()
+            
+            if not row:
+                return eph(respond, f":x: Trip '*{trip_name}*' does not exist in this channel.")
+            
+            if row[0] != user:
+                return eph(respond, f":x: Only the trip creator can delete '*{trip_name}*'.")
+            
+            # Check if there are any cars on this trip
+            cur.execute(
+                "SELECT COUNT(*) FROM cars WHERE channel_id=%s AND trip=%s",
+                (channel_id, trip_name)
+            )
+            car_count = cur.fetchone()[0]
+            
+            if car_count > 0:
+                return eph(respond, f":x: Cannot delete trip '*{trip_name}*' - it has {car_count} car(s). Delete all cars first.")
+        
+        # Send confirmation prompt for trip deletion
+        respond({
+            "text": f":warning: Are you sure you want to delete trip '*{trip_name}*'?",
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":warning: Are you sure you want to delete trip '*{trip_name}*'? This action cannot be undone."
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Yes, Delete Trip"},
+                            "style": "danger",
+                            "action_id": "confirm_delete_trip",
+                            "value": f"{channel_id}:{trip_name}"
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Cancel"},
+                            "action_id": "cancel_delete_trip",
+                            "value": f"{trip_name}"
+                        }
+                    ]
+                }
+            ]
+        })
+
+    @bolt_app.action("confirm_delete_trip")
+    def handle_confirm_delete_trip(ack, body, client):
+        ack()
+        channel_id, trip_name = body["actions"][0]["value"].split(":")
+        user = body["user"]["id"]
+        
+        with get_conn() as conn:
+            cur = conn.cursor()
+            
+            # Verify the user still owns this trip and it still exists
+            cur.execute(
+                "SELECT created_by FROM trips WHERE channel_id=%s AND name=%s",
+                (channel_id, trip_name)
+            )
+            row = cur.fetchone()
+            
+            if not row or row[0] != user:
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=":x: Trip no longer exists or you don't own it.", 
+                    blocks=[]
+                )
+                return
+            
+            # Double-check no cars exist (race condition protection)
+            cur.execute(
+                "SELECT COUNT(*) FROM cars WHERE channel_id=%s AND trip=%s",
+                (channel_id, trip_name)
+            )
+            car_count = cur.fetchone()[0]
+            
+            if car_count > 0:
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=f":x: Cannot delete trip '*{trip_name}*' - it now has {car_count} car(s). Delete all cars first.", 
+                    blocks=[]
+                )
+                return
+            
+            # Delete the trip
+            cur.execute(
+                "DELETE FROM trips WHERE channel_id=%s AND name=%s",
+                (channel_id, trip_name)
+            )
+            conn.commit()
+        
+        # Update the message to show completion
+        client.chat_update(
+            channel=body["channel"]["id"], 
+            ts=body["container"]["message_ts"], 
+            text=f":white_check_mark: Trip '*{trip_name}*' has been deleted.", 
+            blocks=[]
+        )
+
+    @bolt_app.action("cancel_delete_trip")
+    def handle_cancel_delete_trip(ack, body, client):
+        ack()
+        client.chat_update(
+            channel=body["channel"]["id"], 
+            ts=body["container"]["message_ts"], 
+            text=":information_source: Trip deletion cancelled.", 
+            blocks=[]
+        )
 
