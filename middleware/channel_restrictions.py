@@ -10,6 +10,15 @@ def register_channel_restrictions(bolt_app):
     def restrict_to_private_channels(body, next):
         """Only allow bot usage in private channels (groups) and DMs"""
         
+        # AGGRESSIVE DEBUG LOGGING - This should show up in logs if middleware is running
+        print("="*50)
+        print("🚨 MIDDLEWARE TRIGGERED!")
+        print(f"📋 Body keys: {list(body.keys())}")
+        print(f"🔍 Request type: {body.get('type')}")
+        print(f"📝 Command: {body.get('command')}")
+        print(f"📍 Channel ID: {body.get('channel_id')}")
+        print("="*50)
+        
         # Get channel ID from various possible locations
         channel_id = (
             body.get("channel_id") or 
