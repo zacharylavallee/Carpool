@@ -2,13 +2,19 @@
 Help command for the carpool bot
 """
 from utils.helpers import eph
+from utils.channel_guard import check_bot_channel_access
 
 def register_help_commands(bolt_app):
     """Register help-related commands"""
     
     @bolt_app.command("/help")
-    def cmd_help(ack, respond):
+    def cmd_help(ack, respond, command):
         ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
         eph(respond, (
             "*Available commands:*\n"
             "`/help` – show this help message\n"

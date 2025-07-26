@@ -99,6 +99,10 @@ def register_car_commands(bolt_app):
         ack()
         channel_id = command["channel_id"]
         
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
         if not trip_info:
