@@ -46,13 +46,22 @@ def run_migration():
         
         print("📋 Step 2: Updating trips table constraints...")
         
-        # Drop old primary key if it exists
+        # First, drop any foreign key constraints that depend on the primary key
+        try:
+            cur.execute("ALTER TABLE cars DROP CONSTRAINT IF EXISTS cars_new_channel_id_fkey")
+            cur.execute("ALTER TABLE cars DROP CONSTRAINT IF EXISTS cars_channel_id_fkey")
+            cur.execute("ALTER TABLE cars DROP CONSTRAINT IF EXISTS cars_trip_fkey")
+            print("   → Removed foreign key constraints from cars table")
+        except Exception as e:
+            print(f"   → Foreign key removal: {e}")
+        
+        # Now drop old primary key constraints
         try:
             cur.execute("ALTER TABLE trips DROP CONSTRAINT IF EXISTS trips_pkey")
             cur.execute("ALTER TABLE trips DROP CONSTRAINT IF EXISTS trips_new_pkey")
             print("   → Removed old primary key constraints")
         except Exception as e:
-            print(f"   → No old constraints to remove: {e}")
+            print(f"   → Primary key removal: {e}")
         
         # Add new primary key on channel_id (one trip per channel)
         try:
@@ -97,18 +106,16 @@ def run_migration():
         else:
             print("✅ cars table channel_id column already exists")
         
-        # Update foreign key constraint to reference trips(channel_id)
+        # Add foreign key constraint to reference trips(channel_id)
         try:
-            cur.execute("ALTER TABLE cars DROP CONSTRAINT IF EXISTS cars_trip_fkey")
-            cur.execute("ALTER TABLE cars DROP CONSTRAINT IF EXISTS cars_channel_id_fkey")
             cur.execute("""
                 ALTER TABLE cars 
                 ADD CONSTRAINT cars_channel_id_fkey 
                 FOREIGN KEY (channel_id) REFERENCES trips(channel_id) ON DELETE CASCADE
             """)
-            print("   → Updated foreign key constraint")
+            print("   → Added foreign key constraint")
         except Exception as e:
-            print(f"   → Foreign key constraint update: {e}")
+            print(f"   → Foreign key constraint addition: {e}")
         
         print("📋 Step 4: Implementing car ID reuse system...")
         
