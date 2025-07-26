@@ -17,9 +17,13 @@ def register_channel_restrictions(bolt_app):
             body.get("channel", {}).get("id") if isinstance(body.get("channel"), dict) else body.get("channel")
         )
         
+        # Debug logging
+        print(f"🔍 Middleware check: type={body.get('type')}, channel_id={channel_id}")
+        
         # Check if this is a button action (block_actions) - these should be allowed through
         # since they're responses to ephemeral messages that were already validated
         if body.get("type") == "block_actions":
+            print("✅ Allowing block_actions through middleware")
             next()
             return
         
@@ -31,9 +35,11 @@ def register_channel_restrictions(bolt_app):
             # U* = User IDs in DMs (allow)
             
             if channel_id.startswith("C"):
+                print(f"❌ Blocking public channel: {channel_id}")
                 # This is a public channel - block it
                 # For slash commands, provide an error response
                 if body.get("type") == "slash_command":
+                    print("📤 Sending error response for blocked slash command")
                     # We need to respond immediately to prevent the command from proceeding
                     import json
                     import urllib3
@@ -45,13 +51,24 @@ def register_channel_restrictions(bolt_app):
                             "response_type": "ephemeral",
                             "text": ":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel."
                         }
-                        http.request(
-                            'POST',
-                            response_url,
-                            body=json.dumps(error_response),
-                            headers={'Content-Type': 'application/json'}
-                        )
+                        try:
+                            http.request(
+                                'POST',
+                                response_url,
+                                body=json.dumps(error_response),
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            print("✅ Error response sent successfully")
+                        except Exception as e:
+                            print(f"❌ Failed to send error response: {e}")
+                    else:
+                        print("❌ No response_url found in body")
+                # Don't call next() - this blocks the request
                 return
+            else:
+                print(f"✅ Allowing private channel/DM: {channel_id}")
+        else:
+            print("⚠️ No channel_id found, allowing request")
         
         # Allow private channels, DMs, and any other cases
         next()
