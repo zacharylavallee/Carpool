@@ -117,7 +117,7 @@ def register_car_commands(bolt_app):
             
             # Get the active trip for THIS channel (if any)
             cur.execute(
-                "SELECT name FROM trips WHERE channel_id=%s ORDER BY created_at DESC LIMIT 1",
+                "SELECT name FROM trips WHERE channel_id=%s AND active=TRUE ORDER BY created_at DESC LIMIT 1",
                 (channel_id,)
             )
             active_trip_row = cur.fetchone()

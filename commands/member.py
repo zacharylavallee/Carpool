@@ -122,7 +122,7 @@ def register_member_commands(bolt_app):
         # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT name FROM trips WHERE channel_id=%s", (channel_id,))
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
             trip_row = cur.fetchone()
             
             if not trip_row:
@@ -187,7 +187,7 @@ def register_member_commands(bolt_app):
         # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT name FROM trips WHERE channel_id=%s", (channel_id,))
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
             trip_row = cur.fetchone()
             
             if not trip_row:

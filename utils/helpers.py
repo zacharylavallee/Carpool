@@ -53,10 +53,10 @@ def get_channel_members(channel_id: str):
         return []
 
 def get_active_trip(channel_id: str):
-    """Get the active trip for a channel. Returns (trip_name, created_by) or None if no trip exists."""
+    """Get the active trip for a channel. Returns (trip_name, created_by) or None if no active trip exists."""
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT name, created_by FROM trips WHERE channel_id=%s", (channel_id,))
+        cur.execute("SELECT name, created_by FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
         row = cur.fetchone()
         return row if row else None
 
