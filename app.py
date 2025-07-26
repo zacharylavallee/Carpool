@@ -6,7 +6,7 @@ import psycopg2.extras
 from datetime import datetime
 
 from dotenv import load_dotenv, find_dotenv
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
 
@@ -395,6 +395,12 @@ def cmd_leavecar(ack, respond, command):
 # ─── WSGI entrypoint ─────────────────────────────────────────────────────
 @flask_app.route("/slack/events", methods=["POST"])
 def slack_events():
+    data = request.get_json(force=True, silent=True) or {}
+    # handle Slack URL verification challenge
+    if data.get("type") == "url_verification":
+        return jsonify({"challenge": data["challenge"]})
+
+    # otherwise pass to Bolt
     return handler.handle(request)
 
 # ─── Health‑check endpoint ───────────────────────────────────────────────
