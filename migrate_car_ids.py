@@ -39,7 +39,7 @@ def migrate_car_ids():
                     seats INTEGER NOT NULL,
                     created_by TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY(trip, channel_id) REFERENCES trips(name, channel_id) ON DELETE CASCADE,
+                    FOREIGN KEY(channel_id) REFERENCES trips(channel_id) ON DELETE CASCADE,
                     UNIQUE(trip, channel_id, created_by)
                 )
             """)
