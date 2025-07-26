@@ -174,7 +174,7 @@ def register_manage_commands(bolt_app):
         })
 
     @bolt_app.action("confirm_delete_car")
-    def handle_confirm_delete_car(ack, body, client):
+    def handle_confirm_delete_car(ack, body, client, respond):
         ack()
         car_id, channel_id, trip = body["actions"][0]["value"].split(":")
         car_id = int(car_id)
@@ -188,55 +188,69 @@ def register_manage_commands(bolt_app):
             car_row = cur.fetchone()
             
             if not car_row or car_row[1] != user:
-                client.chat_update(
-                    channel=body["channel"]["id"], 
-                    ts=body["container"]["message_ts"], 
-                    text=":x: Car no longer exists or you don't own it.", 
-                    blocks=[]
-                )
+                try:
+                    client.chat_update(
+                        channel=body["channel"]["id"], 
+                        ts=body["container"]["message_ts"], 
+                        text=":x: Car no longer exists or you don't own it.", 
+                        blocks=[]
+                    )
+                except Exception:
+                    respond(":x: Car no longer exists or you don't own it.")
                 return
             
             car_name = car_row[0]
-            
-            # Get all members to notify them
-            cur.execute("SELECT user_id FROM car_members WHERE car_id=%s", (car_id,))
-            members = [row[0] for row in cur.fetchall()]
             
             # Delete the car (CASCADE will handle car_members)
             cur.execute("DELETE FROM cars WHERE id=%s", (car_id,))
             conn.commit()
         
-        # Update the message to show completion
-        client.chat_update(
-            channel=body["channel"]["id"], 
-            ts=body["container"]["message_ts"], 
-            text=f":white_check_mark: Your car (*{car_name}*) has been deleted.", 
-            blocks=[]
-        )
-        
-        # Notify all members
-        for member in members:
-            if member != user:  # Don't notify the car creator
-                client.chat_postMessage(
-                    channel=member, 
-                    text=f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator."
-                )
+        # Update the message to show completion with error handling
+        try:
+            client.chat_update(
+                channel=body["channel"]["id"], 
+                ts=body["container"]["message_ts"], 
+                text=f":white_check_mark: Your car (*{car_name}*) has been deleted.", 
+                blocks=[]
+            )
+        except Exception:
+            respond(f":white_check_mark: Your car (*{car_name}*) has been deleted.")
         
         # Post announcement
         post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted their car (*{car_name}*) on *{trip}*.")
 
+        # Notify all members
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM car_members WHERE car_id=%s", (car_id,))
+            members = [row[0] for row in cur.fetchall()]
+        
+        for member in members:
+            if member != user:  # Don't notify the car creator
+                try:
+                    client.chat_postMessage(
+                        channel=member, 
+                        text=f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator."
+                    )
+                except Exception:
+                    respond(f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator.")
+        post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted their car (*{car_name}*) on *{trip}*.")
+
     @bolt_app.action("cancel_delete_car")
-    def handle_cancel_delete_car(ack, body, client):
+    def handle_cancel_delete_car(ack, body, client, respond):
         ack()
-        client.chat_update(
-            channel=body["channel"]["id"], 
-            ts=body["container"]["message_ts"], 
-            text=":information_source: Car deletion cancelled.", 
-            blocks=[]
-        )
+        try:
+            client.chat_update(
+                channel=body["channel"]["id"], 
+                ts=body["container"]["message_ts"], 
+                text=":information_source: Car deletion cancelled.", 
+                blocks=[]
+            )
+        except Exception:
+            respond(":information_source: Car deletion cancelled.")
 
     @bolt_app.action("confirm_update_car")
-    def handle_confirm_update_car(ack, body, client):
+    def handle_confirm_update_car(ack, body, client, respond):
         ack()
         car_id, channel_id, trip, new_seats, current_seats = body["actions"][0]["value"].split(":")
         car_id, new_seats, current_seats = int(car_id), int(new_seats), int(current_seats)
@@ -250,12 +264,15 @@ def register_manage_commands(bolt_app):
             car_row = cur.fetchone()
             
             if not car_row or car_row[1] != user:
-                client.chat_update(
-                    channel=body["channel"]["id"], 
-                    ts=body["container"]["message_ts"], 
-                    text=":x: Car no longer exists or you don't own it.", 
-                    blocks=[]
-                )
+                try:
+                    client.chat_update(
+                        channel=body["channel"]["id"], 
+                        ts=body["container"]["message_ts"], 
+                        text=":x: Car no longer exists or you don't own it.", 
+                        blocks=[]
+                    )
+                except Exception:
+                    respond(":x: Car no longer exists or you don't own it.")
                 return
             
             car_name = car_row[0]
@@ -270,23 +287,29 @@ def register_manage_commands(bolt_app):
         else:
             feedback = f":white_check_mark: Your car (*{car_name}*) now has {new_seats} seats (reduced from {current_seats}). All current members remain."
         
-        # Update the message to show completion
-        client.chat_update(
-            channel=body["channel"]["id"], 
-            ts=body["container"]["message_ts"], 
-            text=feedback, 
-            blocks=[]
-        )
+        # Update the message to show completion with error handling
+        try:
+            client.chat_update(
+                channel=body["channel"]["id"], 
+                ts=body["container"]["message_ts"], 
+                text=feedback, 
+                blocks=[]
+            )
+        except Exception:
+            respond(feedback)
         
         # Post announcement
         post_announce(trip, channel_id, f":gear: <@{user}> updated their car (*{car_name}*) to {new_seats} seats on *{trip}*.")
 
     @bolt_app.action("cancel_update_car")
-    def handle_cancel_update_car(ack, body, client):
+    def handle_cancel_update_car(ack, body, client, respond):
         ack()
-        client.chat_update(
-            channel=body["channel"]["id"], 
-            ts=body["container"]["message_ts"], 
-            text=":information_source: Car update cancelled.", 
-            blocks=[]
-        )
+        try:
+            client.chat_update(
+                channel=body["channel"]["id"], 
+                ts=body["container"]["message_ts"], 
+                text=":information_source: Car update cancelled.", 
+                blocks=[]
+            )
+        except Exception:
+            respond(":information_source: Car update cancelled.")
