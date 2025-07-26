@@ -126,12 +126,12 @@ def cmd_help(ack, respond):
         "`/createtrip TripName` – define a new trip\n"
         "`/deletetrip TripName` – delete a trip\n"
         "`/settripchannel TripName #channel` – announcements\n"
-        "`/createcar TripName CarName seats` – create & join car\n"
+        "`/createcar TripName seats` – create & join car (auto-named)\n"
         "`/listcars TripName` – list cars on a trip\n"
         "`/carstatus TripName` – show fill & members\n"
         "`/requestjoin CarID` – ask to join a car\n"
         "`/leavecar CarID` – leave a car you joined\n"
-        "`/renamecar CarID NewName` – rename your car\n"
+
         "`/updatecar CarID seats=X` – update seat count\n"
         "`/removeuser CarID @user` – remove a member (creator only)\n"
         "`/removecar CarID` – delete a car (creator only)\n"
@@ -215,16 +215,24 @@ def cmd_settripchannel(ack, respond, command):
 def cmd_createcar(ack, respond, command):
     ack()
     parts = (command.get("text") or "").split()
-    if len(parts) < 3:
-        return eph(respond, "Usage: `/createcar TripName CarName seats`")
-    trip, *name_parts, seats_str = parts
-    name = " ".join(name_parts)
+    if len(parts) != 2:
+        return eph(respond, "Usage: `/createcar TripName seats`")
+    trip, seats_str = parts
     try:
         seats = int(seats_str)
     except ValueError:
         return eph(respond, ":x: seats must be a number.")
     user = command["user_id"]
     channel_id = command["channel_id"]
+    
+    # Get username for car naming
+    try:
+        user_info = bolt_app.client.users_info(user=user)
+        username = user_info["user"]["name"]
+        name = f"{username}'s car"
+    except Exception:
+        # Fallback if we can't get username
+        name = f"<@{user}>'s car"
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
@@ -422,34 +430,6 @@ def cmd_leavecar(ack, respond, command):
     eph(respond, f":wave: You left car `{car_id}`.")
     post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
 
-# ─── /renamecar ─────────────────────────────────────────────────────────
-@bolt_app.command("/renamecar")
-def cmd_renamecar(ack, respond, command):
-    ack()
-    parts = (command.get("text") or "").split()
-    if len(parts) < 2:
-        return eph(respond, "Usage: `/renamecar CarID NewName`")
-    try:
-        car_id = int(parts[0])
-    except ValueError:
-        return eph(respond, ":x: CarID must be a number.")
-    new_name = " ".join(parts[1:])
-    user = command["user_id"]
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT created_by, trip FROM cars WHERE id=%s", (car_id,))
-        row = cur.fetchone()
-    if not row:
-        return eph(respond, f":x: Car `{car_id}` does not exist.")
-    if row[0] != user:
-        return eph(respond, ":x: Only the creator can rename this car.")
-    trip = row[1]
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("UPDATE cars SET name=%s WHERE id=%s", (new_name, car_id))
-        conn.commit()
-    eph(respond, f":pencil2: Renamed car `{car_id}` to *{new_name}*.")
-    post_announce(trip, channel_id, f":pencil2: <@{user}> renamed car `{car_id}` to *{new_name}* on *{trip}*.")
 
 # ─── /updatecar ─────────────────────────────────────────────────────────
 @bolt_app.command("/updatecar")
