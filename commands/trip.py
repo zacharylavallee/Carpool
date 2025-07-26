@@ -4,6 +4,7 @@ Trip management commands for the carpool bot
 import psycopg2
 from config.database import get_conn
 from utils.helpers import eph, get_channel_members
+from utils.channel_guard import check_bot_channel_access
 
 def register_trip_commands(bolt_app):
     """Register trip management commands"""
@@ -11,11 +12,16 @@ def register_trip_commands(bolt_app):
     @bolt_app.command("/trip")
     def cmd_trip(ack, respond, command):
         ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
         trip = (command.get("text") or "").strip()
         if not trip:
             return eph(respond, "Usage: `/trip TripName`")
         user = command["user_id"]
-        channel_id = command["channel_id"]
         
         with get_conn() as conn:
             cur = conn.cursor()

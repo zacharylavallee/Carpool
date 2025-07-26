@@ -2,8 +2,10 @@
 Car management commands for the carpool bot (update/remove cars)
 """
 import psycopg2
+import psycopg2.extras
 from config.database import get_conn
 from utils.helpers import eph, post_announce
+from utils.channel_guard import check_bot_channel_access
 
 def register_manage_commands(bolt_app):
     """Register car management commands"""
@@ -11,6 +13,12 @@ def register_manage_commands(bolt_app):
     @bolt_app.command("/update")
     def cmd_update(ack, respond, command):
         ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
         parts = (command.get("text") or "").split()
         if len(parts) != 2 or not parts[1].startswith("seats="):
             return eph(respond, "Usage: `/update CarID seats=X` (e.g., `/update 1 seats=5`)") 
@@ -20,7 +28,6 @@ def register_manage_commands(bolt_app):
         except (ValueError, IndexError):
             return eph(respond, ":x: Invalid format. Use `/update CarID seats=X`")
         user = command["user_id"]
-        channel_id = command["channel_id"]
         
         with get_conn() as conn:
             cur = conn.cursor()
@@ -50,6 +57,12 @@ def register_manage_commands(bolt_app):
     @bolt_app.command("/delete")
     def cmd_delete(ack, respond, command):
         ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
         car_id_str = (command.get("text") or "").strip()
         if not car_id_str:
             return eph(respond, "Usage: `/delete CarID`")
@@ -58,7 +71,6 @@ def register_manage_commands(bolt_app):
         except ValueError:
             return eph(respond, ":x: CarID must be a number.")
         user = command["user_id"]
-        channel_id = command["channel_id"]
         
         with get_conn() as conn:
             cur = conn.cursor()

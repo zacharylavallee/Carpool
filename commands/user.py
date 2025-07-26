@@ -4,6 +4,7 @@ User-focused commands for the carpool bot
 import psycopg2.extras
 from config.database import get_conn
 from utils.helpers import eph, get_active_trip, get_channel_members
+from utils.channel_guard import check_bot_channel_access
 
 def register_user_commands(bolt_app):
     """Register user-focused commands"""
@@ -16,6 +17,10 @@ def register_user_commands(bolt_app):
     def cmd_needride(ack, respond, command):
         ack()
         channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
         
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)

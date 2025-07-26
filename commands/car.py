@@ -5,6 +5,7 @@ import psycopg2
 import psycopg2.extras
 from config.database import get_conn
 from utils.helpers import eph, get_active_trip, post_announce, get_username, get_next_available_car_id
+from utils.channel_guard import check_bot_channel_access
 
 def register_car_commands(bolt_app):
     """Register car management commands"""
@@ -12,6 +13,12 @@ def register_car_commands(bolt_app):
     @bolt_app.command("/car")
     def cmd_car(ack, respond, command):
         ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
         seats_str = (command.get("text") or "").strip()
         if not seats_str:
             return eph(respond, "Usage: `/car seats` (e.g., `/car 4`)") 
@@ -20,7 +27,6 @@ def register_car_commands(bolt_app):
         except ValueError:
             return eph(respond, ":x: seats must be a number.")
         user = command["user_id"]
-        channel_id = command["channel_id"]
         
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
@@ -56,6 +62,10 @@ def register_car_commands(bolt_app):
     def cmd_list(ack, respond, command):
         ack()
         channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
         
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
