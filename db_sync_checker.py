@@ -82,27 +82,76 @@ class CodebaseAnalyzer:
                                 self._parse_sql_operation(sql, file_path)
     
     def _find_sql_operations(self, content, file_path):
-        """Find SQL operations using regex patterns"""
-        # Common SQL patterns
+        """Find SQL operations using more precise patterns"""
+        # Look for SQL operations in execute() calls or triple-quoted strings
+        # More precise patterns that look for actual SQL context
+        
+        # Find execute() calls with SQL
+        execute_pattern = r'execute\s*\(\s*["\'\']{1,3}([^"\'\']*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|SELECT.*?FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)[^"\'\']*)["\'\']{1,3}'
+        
+        matches = re.finditer(execute_pattern, content, re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            sql_content = match.group(1)
+            self._parse_sql_content(sql_content, file_path)
+        
+        # Also look for multi-line SQL strings (triple quotes)
+        multiline_sql_pattern = r'["\'\']{3}([^"\'\']*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|SELECT.*?FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)[^"\'\']*)["\'\']{3}'
+        
+        matches = re.finditer(multiline_sql_pattern, content, re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            sql_content = match.group(1)
+            self._parse_sql_content(sql_content, file_path)
+    
+    def _parse_sql_content(self, sql_content, file_path):
+        """Parse SQL content to extract table operations"""
+        # More precise table extraction from actual SQL
         sql_patterns = [
-            r'(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|SELECT.*FROM)\s+(\w+)',
-            r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)',
-            r'ALTER\s+TABLE\s+(\w+)',
-            r'DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)'
+            (r'INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)', 'INSERT'),
+            (r'UPDATE\s+([a-zA-Z_][a-zA-Z0-9_]*)', 'UPDATE'),
+            (r'DELETE\s+FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)', 'DELETE'),
+            (r'FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)', 'SELECT'),
+            (r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][a-zA-Z0-9_]*)', 'CREATE'),
+            (r'ALTER\s+TABLE\s+([a-zA-Z_][a-zA-Z0-9_]*)', 'ALTER'),
+            (r'DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-zA-Z_][a-zA-Z0-9_]*)', 'DROP')
         ]
         
-        for pattern in sql_patterns:
-            matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE)
+        for pattern, operation in sql_patterns:
+            matches = re.finditer(pattern, sql_content, re.IGNORECASE)
             for match in matches:
-                table_name = match.group(1)
-                operation_type = match.group(0).split()[0].upper()
+                table_name = match.group(1).lower()
                 
-                self.expected_schema["database_operations"].append({
-                    "file": str(file_path.relative_to(self.project_root)),
-                    "table": table_name,
-                    "operation": operation_type,
-                    "sql_snippet": match.group(0)[:100]
-                })
+                # Filter out obvious non-table names
+                if self._is_valid_table_name(table_name):
+                    self.expected_schema["database_operations"].append({
+                        "file": str(file_path.relative_to(self.project_root)),
+                        "table": table_name,
+                        "operation": operation,
+                        "sql_snippet": sql_content[:100].replace('\n', ' ')
+                    })
+    
+    def _is_valid_table_name(self, name):
+        """Check if a name looks like a valid table name"""
+        # Filter out common false positives
+        invalid_names = {
+            'information_schema', 'pg_sequences', 'pg_catalog',
+            'current_timestamp', 'not', 'null', 'true', 'false',
+            'and', 'or', 'where', 'order', 'by', 'group', 'having',
+            'limit', 'offset', 'distinct', 'all', 'any', 'some',
+            'exists', 'in', 'like', 'between', 'is', 'as', 'on',
+            'join', 'inner', 'outer', 'left', 'right', 'full',
+            'union', 'intersect', 'except', 'case', 'when', 'then',
+            'else', 'end', 'if', 'else', 'elsif', 'while', 'for',
+            'do', 'begin', 'commit', 'rollback', 'transaction',
+            'it', 'your', 'their', 'seat', 'statements', 'failed',
+            'sequence', 'the', 'these', 'carid', 'a', 'an', 'to',
+            'from', 'with', 'without', 'into', 'onto', 'upon'
+        }
+        
+        # Must be a valid identifier and not in the invalid list
+        return (name.isidentifier() and 
+                len(name) > 1 and 
+                name.lower() not in invalid_names and
+                not name.isdigit())
     
     def _parse_sql_operation(self, sql, file_path):
         """Parse individual SQL operations"""
@@ -155,23 +204,60 @@ class CodebaseAnalyzer:
             })
     
     def _find_discord_commands(self, content, file_path):
-        """Find Discord bot commands"""
-        # Look for @bot.command or @commands.command decorators
-        command_patterns = [
-            r'@(?:bot\.)?command\(["\']?(\w+)["\']?\)',
-            r'@(?:bot\.)?command\(\s*name\s*=\s*["\'](\w+)["\']',
-            r'async\s+def\s+(\w+)\s*\([^)]*ctx[^)]*\):',  # Discord command functions
+        """Find Discord bot commands more precisely"""
+        commands_found = set()  # Avoid duplicates
+        
+        # Look for @bot.command() or @commands.command() decorators
+        decorator_patterns = [
+            r'@(?:bot|commands)\.command\(\s*name\s*=\s*["\']([a-zA-Z_][a-zA-Z0-9_]*)["\']',
+            r'@(?:bot|commands)\.command\(\s*["\']([a-zA-Z_][a-zA-Z0-9_]*)["\']',
+            r'@(?:bot|commands)\.command\(\s*\)\s*\n\s*async\s+def\s+([a-zA-Z_][a-zA-Z0-9_]*)',
         ]
         
-        for pattern in command_patterns:
-            matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE)
+        for pattern in decorator_patterns:
+            matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE | re.DOTALL)
             for match in matches:
                 command_name = match.group(1)
-                if command_name not in ['__init__', 'setup', 'teardown']:  # Skip common non-command functions
-                    self.expected_schema["commands"].append({
-                        "name": command_name,
-                        "file": str(file_path.relative_to(self.project_root))
-                    })
+                if self._is_valid_command_name(command_name):
+                    commands_found.add(command_name)
+        
+        # Look for async functions that take ctx as first parameter (likely commands)
+        ctx_function_pattern = r'async\s+def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*ctx\s*[,)]'
+        matches = re.finditer(ctx_function_pattern, content, re.IGNORECASE | re.MULTILINE)
+        for match in matches:
+            command_name = match.group(1)
+            if self._is_valid_command_name(command_name):
+                # Only add if it's not already found and looks like a command
+                if command_name not in commands_found:
+                    # Check if there's a decorator above this function
+                    func_start = match.start()
+                    lines_before = content[:func_start].split('\n')[-5:]  # Check 5 lines before
+                    has_decorator = any('@' in line and ('command' in line or 'bot.' in line) for line in lines_before)
+                    if has_decorator:
+                        commands_found.add(command_name)
+        
+        # Add all found commands to the schema
+        for command_name in commands_found:
+            self.expected_schema["commands"].append({
+                "name": command_name,
+                "file": str(file_path.relative_to(self.project_root))
+            })
+    
+    def _is_valid_command_name(self, name):
+        """Check if a name looks like a valid Discord command"""
+        # Filter out common non-command function names
+        invalid_command_names = {
+            '__init__', 'setup', 'teardown', 'on_ready', 'on_message',
+            'on_error', 'on_command_error', 'main', 'run', 'start',
+            'stop', 'close', 'connect', 'disconnect', 'login', 'logout',
+            'get_connection', 'execute', 'fetchone', 'fetchall', 'commit',
+            'rollback', 'cursor', 'analyze_codebase', 'check_sync'
+        }
+        
+        return (name.isidentifier() and 
+                len(name) > 1 and 
+                name.lower() not in invalid_command_names and
+                not name.startswith('_'))
     
     def _infer_schema_from_operations(self):
         """Infer expected schema from database operations found in code"""
