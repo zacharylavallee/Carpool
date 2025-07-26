@@ -6,7 +6,7 @@ import psycopg2.extras
 from datetime import datetime
 
 from dotenv import load_dotenv, find_dotenv
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
 
@@ -700,7 +700,18 @@ def cmd_needride(ack, respond, command):
 # ─── WSGI entrypoint ─────────────────────────────────────────────────────
 @flask_app.route("/slack/events", methods=["POST"])
 def slack_events():
+    data = request.get_json(force=True, silent=True) or {}
+    # handle Slack URL verification challenge
+    if data.get("type") == "url_verification":
+        return jsonify({"challenge": data["challenge"]})
+
+    # otherwise pass to Bolt
     return handler.handle(request)
+
+# ─── Health‑check endpoint ───────────────────────────────────────────────
+@flask_app.route("/", methods=["GET"])
+def index():
+    return "✅ Carpool bot is running!", 200
 
 if __name__ == "__main__":
     flask_app.run(port=3000)
