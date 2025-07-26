@@ -4,7 +4,7 @@ Car management commands for the carpool bot
 import psycopg2
 import psycopg2.extras
 from config.database import get_conn
-from utils.helpers import eph, get_active_trip, post_announce, get_username
+from utils.helpers import eph, get_active_trip, post_announce, get_username, get_next_available_car_id
 
 def register_car_commands(bolt_app):
     """Register car management commands"""
@@ -32,14 +32,16 @@ def register_car_commands(bolt_app):
         username = get_username(user)
         name = f"{username}'s car"
         
+        # Get the next available car ID (reuses deleted IDs)
+        car_id = get_next_available_car_id(trip, channel_id)
+        
         with get_conn() as conn:
             cur = conn.cursor()
             try:
                 cur.execute(
-                    "INSERT INTO cars(trip, channel_id, name, seats, created_by) VALUES(%s,%s,%s,%s,%s) RETURNING id",
-                    (trip, channel_id, name, seats, user)
+                    "INSERT INTO cars(id, trip, channel_id, name, seats, created_by) VALUES(%s,%s,%s,%s,%s,%s)",
+                    (car_id, trip, channel_id, name, seats, user)
                 )
-                car_id = cur.fetchone()[0]
                 cur.execute(
                     "INSERT INTO car_members(car_id, user_id) VALUES(%s,%s)",
                     (car_id, user)

@@ -41,7 +41,7 @@ def init_db():
         # Cars
         cur.execute("""
         CREATE TABLE IF NOT EXISTS cars (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             trip TEXT NOT NULL,
             channel_id TEXT NOT NULL,
             name TEXT NOT NULL,
