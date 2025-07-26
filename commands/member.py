@@ -126,7 +126,7 @@ def register_member_commands(bolt_app):
             cur = conn.cursor()
             cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user))
             conn.commit()
-        eph(respond, f":wave: You left car `{car_id}`.")
+        eph(respond, f":white_check_mark: You left car `{car_id}`.")
         post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
 
     @bolt_app.command("/boot")
@@ -156,6 +156,6 @@ def register_member_commands(bolt_app):
             cur = conn.cursor()
             cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, target_user))
             conn.commit()
-        eph(respond, f":boot: Removed <@{target_user}> from car `{car_id}`.")
+        eph(respond, f":white_check_mark: You removed <@{target_user}> from car `{car_id}`.")
         bolt_app.client.chat_postMessage(channel=target_user, text=f":boot: You were removed from car `{car_id}` on *{trip}*.")
         post_announce(trip, channel_id, f":boot: <@{user}> removed <@{target_user}> from car `{car_id}` on *{trip}*.")

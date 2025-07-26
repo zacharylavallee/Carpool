@@ -44,7 +44,7 @@ def register_manage_commands(bolt_app):
             cur = conn.cursor()
             cur.execute("UPDATE cars SET seats=%s WHERE id=%s", (new_seats, car_id))
             conn.commit()
-        eph(respond, f":gear: Updated car `{car_id}` to {new_seats} seats.")
+        eph(respond, f":white_check_mark: You updated car `{car_id}` to {new_seats} seats.")
         post_announce(trip, channel_id, f":gear: <@{user}> updated car `{car_id}` to {new_seats} seats on *{trip}*.")
 
     @bolt_app.command("/delete")
@@ -81,5 +81,5 @@ def register_manage_commands(bolt_app):
         # Notify all members
         for member in members:
             bolt_app.client.chat_postMessage(channel=member, text=f":wastebasket: Car `{car_id}` (*{name}*) on *{trip}* was deleted by its creator.")
-        eph(respond, f":wastebasket: Deleted car `{car_id}` (*{name}*).")
+        eph(respond, f":white_check_mark: You deleted car `{car_id}` (*{name}*).")
         post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted car `{car_id}` (*{name}*) on *{trip}*.")
