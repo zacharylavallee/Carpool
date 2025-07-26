@@ -55,8 +55,10 @@ class CodebaseAnalyzer:
         filename = file_path.name.lower()
         if any(skip_name in filename for skip_name in [
             'validate_database', 'fix_database', 'db_sync_checker', 
-            'migration', 'schema', 'backup', 'restore'
+            'cleanup_database', 'debug_sync', 'migration', 'schema', 
+            'backup', 'restore', 'sync'
         ]):
+            print(f"   🚫 Skipping database management script: {filename}")
             return
         
         with open(file_path, 'r', encoding='utf-8') as f:
