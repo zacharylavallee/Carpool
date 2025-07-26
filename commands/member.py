@@ -147,12 +147,22 @@ def register_member_commands(bolt_app):
             
             car_id, car_name, car_creator = car_row
             
-            # Remove the user from the car
-            cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user))
-            conn.commit()
-        
-        eph(respond, f":white_check_mark: You left *{car_name}* (car `{car_id}`).")
-        post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
+            # Check if the user leaving is the car owner
+            if user == car_creator:
+                # Owner is leaving - delete the entire car and all its members
+                cur.execute("DELETE FROM car_members WHERE car_id=%s", (car_id,))
+                cur.execute("DELETE FROM cars WHERE id=%s", (car_id,))
+                conn.commit()
+                
+                eph(respond, f":white_check_mark: You left and deleted your car *{car_name}* (car `{car_id}`).")  
+                post_announce(trip, channel_id, f":boom: <@{user}> left and deleted car `{car_id}` (*{car_name}*) on *{trip}*.");
+            else:
+                # Regular member leaving - just remove them from the car
+                cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user))
+                conn.commit()
+                
+                eph(respond, f":white_check_mark: You left *{car_name}* (car `{car_id}`).")  
+                post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.");
 
     @bolt_app.command("/boot")
     def cmd_boot(ack, respond, command):

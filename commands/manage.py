@@ -234,7 +234,6 @@ def register_manage_commands(bolt_app):
                     )
                 except Exception:
                     respond(f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator.")
-        post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted their car (*{car_name}*) on *{trip}*.")
 
     @bolt_app.action("cancel_delete_car")
     def handle_cancel_delete_car(ack, body, client, respond):

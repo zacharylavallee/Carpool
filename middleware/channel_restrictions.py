@@ -78,7 +78,7 @@ def register_channel_restrictions(bolt_app):
                                     
                                     error_response = {
                                         "response_type": "ephemeral",
-                                        "text": f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
+                                        "text": "This bot is intented to be used in private channels only to limit spam notifications."
                                     }
                                     
                                     data = json.dumps(error_response).encode('utf-8')
