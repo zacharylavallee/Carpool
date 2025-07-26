@@ -49,7 +49,7 @@ def register_car_commands(bolt_app):
                 conn.commit()
             except psycopg2.errors.UniqueViolation:
                 return eph(respond, ":x: You already created a car on this trip in this channel.")
-        eph(respond, f":car: Created *{name}* (ID `{car_id}`) with *{seats}* seats.")
+        eph(respond, f":white_check_mark: You created *{name}* (ID `{car_id}`) with *{seats}* seats.")
         post_announce(trip, channel_id, f":car: <@{user}> created *{name}* (ID `{car_id}`) on *{trip}*.")
 
     @bolt_app.command("/list")
