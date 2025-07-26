@@ -8,77 +8,9 @@ from utils.helpers import eph, get_active_trip, get_channel_members
 def register_user_commands(bolt_app):
     """Register user-focused commands"""
     
-    @bolt_app.command("/mycars")
-    def cmd_mycars(ack, respond, command):
-        ack()
-        channel_id = command["channel_id"]
-        user = command["user_id"]
-        
-        # Get the active trip for this channel
-        trip_info = get_active_trip(channel_id)
-        if not trip_info:
-            return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
-        trip = trip_info[0]
-        
-        with get_conn() as conn:
-            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            # Cars I created
-            cur.execute(
-                """
-                SELECT c.id, c.name, c.seats
-                FROM cars c
-                WHERE c.trip=%s AND c.created_by=%s
-                ORDER BY c.id
-                """, (trip, user)
-            )
-            created = cur.fetchall()
-            # Cars I joined (but didn't create)
-            cur.execute(
-                """
-                SELECT c.id, c.name, c.seats
-                FROM cars c
-                JOIN car_members m ON m.car_id = c.id
-                WHERE c.trip=%s AND m.user_id=%s AND c.created_by != %s
-                ORDER BY c.id
-                """, (trip, user, user)
-            )
-            joined = cur.fetchall()
-        if not created and not joined:
-            return eph(respond, f"You have no cars on *{trip}*.")
-        lines = []
-        if created:
-            lines.append("*Cars you created:*")
-            for c in created:
-                lines.append(f"• `{c['id']}`: *{c['name']}* ({c['seats']} seats)")
-        if joined:
-            if lines:
-                lines.append("")
-            lines.append("*Cars you joined:*")
-            for c in joined:
-                lines.append(f"• `{c['id']}`: *{c['name']}* ({c['seats']} seats)")
-        eph(respond, "\n".join(lines))
 
-    @bolt_app.command("/mytrips")
-    def cmd_mytrips(ack, respond, command):
-        ack()
-        user = command["user_id"]
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT DISTINCT t.name
-                FROM trips t
-                LEFT JOIN cars c ON c.trip = t.name AND c.channel_id = t.channel_id
-                LEFT JOIN car_members m ON m.car_id = c.id
-                WHERE t.created_by = %s OR c.created_by = %s OR m.user_id = %s
-                ORDER BY t.name
-                """, (user, user, user)
-            )
-            trips = [row[0] for row in cur.fetchall()]
-        if not trips:
-            return eph(respond, "You haven't joined or created any trips yet.")
-        lines = [f"• *{trip}*" for trip in trips]
-        eph(respond, f"Your trips:\n" + "\n".join(lines))
+
+
 
     @bolt_app.command("/needride")
     def cmd_needride(ack, respond, command):

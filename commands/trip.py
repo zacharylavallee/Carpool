@@ -37,22 +37,4 @@ def register_trip_commands(bolt_app):
                 conn.commit()
                 eph(respond, f":round_pushpin: Trip *{trip}* replaced the existing trip for this channel.")
 
-    @bolt_app.command("/deletetrip")
-    def cmd_deletetrip(ack, respond, command):
-        ack()
-        user = command["user_id"]
-        channel_id = command["channel_id"]
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT name, created_by FROM trips WHERE channel_id=%s", (channel_id,))
-            row = cur.fetchone()
-        if not row:
-            return eph(respond, ":x: No trip exists in this channel.")
-        trip_name, creator = row
-        if creator != user:
-            return eph(respond, ":x: Only the trip creator can delete it.")
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM trips WHERE channel_id=%s", (channel_id,))
-            conn.commit()
-            eph(respond, f":wastebasket: Trip *{trip_name}* deleted from this channel.")
+
