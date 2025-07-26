@@ -40,20 +40,24 @@ def init_db():
         # Trips
         cur.execute("""
         CREATE TABLE IF NOT EXISTS trips (
-            name TEXT PRIMARY KEY,
+            name TEXT,
+            channel_id TEXT NOT NULL,
             created_by TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(name, channel_id)
         )""")
         # Cars
         cur.execute("""
         CREATE TABLE IF NOT EXISTS cars (
             id SERIAL PRIMARY KEY,
-            trip TEXT NOT NULL REFERENCES trips(name) ON DELETE CASCADE,
+            trip TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
             name TEXT NOT NULL,
             seats INTEGER NOT NULL,
             created_by TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(trip, created_by)
+            FOREIGN KEY(trip, channel_id) REFERENCES trips(name, channel_id) ON DELETE CASCADE,
+            UNIQUE(trip, channel_id, created_by)
         )""")
         # Memberships
         cur.execute("""
@@ -74,8 +78,11 @@ def init_db():
         # Trip settings
         cur.execute("""
         CREATE TABLE IF NOT EXISTS trip_settings (
-            trip TEXT PRIMARY KEY REFERENCES trips(name) ON DELETE CASCADE,
-            channel_id TEXT NOT NULL
+            trip TEXT,
+            channel_id TEXT,
+            announcement_channel_id TEXT NOT NULL,
+            PRIMARY KEY(trip, channel_id),
+            FOREIGN KEY(trip, channel_id) REFERENCES trips(name, channel_id) ON DELETE CASCADE
         )""")
         conn.commit()
 
@@ -92,10 +99,19 @@ handler = SlackRequestHandler(bolt_app)
 def eph(respond, text):
     respond(text=text, response_type="ephemeral")
 
-def post_announce(trip: str, text: str):
+def get_channel_members(channel_id):
+    """Get list of user IDs who are members of the given channel."""
+    try:
+        result = bolt_app.client.conversations_members(channel=channel_id)
+        return result["members"]
+    except Exception as e:
+        logger.error(f"Error getting channel members: {e}")
+        return []
+
+def post_announce(trip: str, channel_id: str, text: str):
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT channel_id FROM trip_settings WHERE trip=%s", (trip,))
+        cur.execute("SELECT announcement_channel_id FROM trip_settings WHERE trip=%s AND channel_id=%s", (trip, channel_id))
         row = cur.fetchone()
         if row:
             bolt_app.client.chat_postMessage(channel=row[0], text=text)
@@ -106,6 +122,7 @@ def cmd_help(ack, respond):
     ack()
     eph(respond, (
         "*Available commands:*\n"
+        "`/help` – show this help message\n"
         "`/createtrip TripName` – define a new trip\n"
         "`/deletetrip TripName` – delete a trip\n"
         "`/settripchannel TripName #channel` – announcements\n"
@@ -131,17 +148,18 @@ def cmd_createtrip(ack, respond, command):
     if not trip:
         return eph(respond, "Usage: `/createtrip TripName`")
     user = command["user_id"]
+    channel_id = command["channel_id"]
     with get_conn() as conn:
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO trips(name, created_by) VALUES(%s,%s)",
-                (trip, user)
+                "INSERT INTO trips(name, channel_id, created_by) VALUES(%s,%s,%s)",
+                (trip, channel_id, user)
             )
             conn.commit()
-            eph(respond, f":round_pushpin: Trip *{trip}* created.")
+            eph(respond, f":round_pushpin: Trip *{trip}* created for this channel.")
         except psycopg2.errors.UniqueViolation:
-            eph(respond, f":x: Trip *{trip}* already exists.")
+            eph(respond, f":x: Trip *{trip}* already exists in this channel.")
 
 @bolt_app.command("/deletetrip")
 def cmd_deletetrip(ack, respond, command):
@@ -150,17 +168,18 @@ def cmd_deletetrip(ack, respond, command):
     if not trip:
         return eph(respond, "Usage: `/deletetrip TripName`")
     user = command["user_id"]
+    channel_id = command["channel_id"]
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT created_by FROM trips WHERE name=%s", (trip,))
+        cur.execute("SELECT created_by FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
         row = cur.fetchone()
         if not row:
-            return eph(respond, f":x: Trip *{trip}* does not exist.")
+            return eph(respond, f":x: Trip *{trip}* does not exist in this channel.")
         if row[0] != user:
             return eph(respond, ":x: Only the creator can delete this trip.")
-        cur.execute("DELETE FROM trips WHERE name=%s", (trip,))
+        cur.execute("DELETE FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
         conn.commit()
-    eph(respond, f":wastebasket: Trip *{trip}* deleted.")
+    eph(respond, f":wastebasket: Trip *{trip}* deleted from this channel.")
 
 # ─── /settripchannel ───────────────────────────────────────────────────
 @bolt_app.command("/settripchannel")
@@ -169,18 +188,27 @@ def cmd_settripchannel(ack, respond, command):
     parts = (command.get("text") or "").split()
     if len(parts) != 2:
         return eph(respond, "Usage: `/settripchannel TripName #channel`")
-    trip, channel = parts
+    trip, announcement_channel = parts
+    user = command["user_id"]
+    channel_id = command["channel_id"]
+    # Check if trip exists in this channel
     with get_conn() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT created_by FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
+        row = cur.fetchone()
+        if not row:
+            return eph(respond, f":x: Trip *{trip}* does not exist in this channel.")
+        if row[0] != user:
+            return eph(respond, ":x: Only the trip creator can set the announcement channel.")
         cur.execute(
             """
-            INSERT INTO trip_settings(trip, channel_id)
-            VALUES(%s,%s)
-            ON CONFLICT(trip) DO UPDATE SET channel_id=excluded.channel_id
-            """, (trip, channel)
+            INSERT INTO trip_settings(trip, channel_id, announcement_channel_id)
+            VALUES(%s,%s,%s)
+            ON CONFLICT(trip, channel_id) DO UPDATE SET announcement_channel_id=excluded.announcement_channel_id
+            """, (trip, channel_id, announcement_channel)
         )
         conn.commit()
-    eph(respond, f":loudspeaker: Announcements for *{trip}* will post in {channel}.")
+    eph(respond, f":loudspeaker: Announcements for *{trip}* will post in {announcement_channel}.")
 
 # ─── /createcar ────────────────────────────────────────────────────────
 @bolt_app.command("/createcar")
@@ -196,15 +224,16 @@ def cmd_createcar(ack, respond, command):
     except ValueError:
         return eph(respond, ":x: seats must be a number.")
     user = command["user_id"]
+    channel_id = command["channel_id"]
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT 1 FROM trips WHERE name=%s", (trip,))
+        cur.execute("SELECT 1 FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
         if not cur.fetchone():
-            return eph(respond, f":x: Trip *{trip}* does not exist.")
+            return eph(respond, f":x: Trip *{trip}* does not exist in this channel.")
         try:
             cur.execute(
-                "INSERT INTO cars(trip, name, seats, created_by) VALUES(%s,%s,%s,%s) RETURNING id",
-                (trip, name, seats, user)
+                "INSERT INTO cars(trip, channel_id, name, seats, created_by) VALUES(%s,%s,%s,%s,%s) RETURNING id",
+                (trip, channel_id, name, seats, user)
             )
             car_id = cur.fetchone()[0]
             cur.execute(
@@ -213,9 +242,9 @@ def cmd_createcar(ack, respond, command):
             )
             conn.commit()
         except psycopg2.errors.UniqueViolation:
-            return eph(respond, ":x: You already created a car on this trip.")
+            return eph(respond, ":x: You already created a car on this trip in this channel.")
     eph(respond, f":car: Created *{name}* (ID `{car_id}`) with *{seats}* seats.")
-    post_announce(trip, f":car: <@{user}> created *{name}* (ID `{car_id}`) on *{trip}*.")
+    post_announce(trip, channel_id, f":car: <@{user}> created *{name}* (ID `{car_id}`) on *{trip}*.")
 
 # ─── /listcars ──────────────────────────────────────────────────────────
 @bolt_app.command("/listcars")
@@ -224,6 +253,7 @@ def cmd_listcars(ack, respond, command):
     trip = (command.get("text") or "").strip()
     if not trip:
         return eph(respond, "Usage: `/listcars TripName`")
+    channel_id = command["channel_id"]
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
@@ -231,19 +261,19 @@ def cmd_listcars(ack, respond, command):
             SELECT c.id, c.name, c.seats, COUNT(m.user_id) AS joined
             FROM cars c
             LEFT JOIN car_members m ON m.car_id=c.id
-            WHERE c.trip=%s
+            WHERE c.trip=%s AND c.channel_id=%s
             GROUP BY c.id, c.name, c.seats
             ORDER BY c.id
-            """, (trip,)
+            """, (trip, channel_id)
         )
         cars = cur.fetchall()
     if not cars:
-        return eph(respond, f"No cars on *{trip}* yet.")
+        return eph(respond, f"No cars on *{trip}* in this channel yet.")
     lines = [
         f"• `{c['id']}`: *{c['name']}* ({c['seats']} seats) — {c['joined']} joined"
         for c in cars
     ]
-    eph(respond, f"Cars on *{trip}*:\n" + "\n".join(lines))
+    eph(respond, f"Cars on *{trip}* in this channel:\n" + "\n".join(lines))
 
 # ─── /carstatus ────────────────────────────────────────────────────────
 @bolt_app.command("/carstatus")
@@ -391,6 +421,281 @@ def cmd_leavecar(ack, respond, command):
         conn.commit()
     eph(respond, f":wave: You left car `{car_id}`.")
     post_announce(trip, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
+
+# ─── /renamecar ─────────────────────────────────────────────────────────
+@bolt_app.command("/renamecar")
+def cmd_renamecar(ack, respond, command):
+    ack()
+    parts = (command.get("text") or "").split()
+    if len(parts) < 2:
+        return eph(respond, "Usage: `/renamecar CarID NewName`")
+    try:
+        car_id = int(parts[0])
+    except ValueError:
+        return eph(respond, ":x: CarID must be a number.")
+    new_name = " ".join(parts[1:])
+    user = command["user_id"]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT created_by, trip FROM cars WHERE id=%s", (car_id,))
+        row = cur.fetchone()
+    if not row:
+        return eph(respond, f":x: Car `{car_id}` does not exist.")
+    if row[0] != user:
+        return eph(respond, ":x: Only the creator can rename this car.")
+    trip = row[1]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE cars SET name=%s WHERE id=%s", (new_name, car_id))
+        conn.commit()
+    eph(respond, f":pencil2: Renamed car `{car_id}` to *{new_name}*.")
+    post_announce(trip, f":pencil2: <@{user}> renamed car `{car_id}` to *{new_name}* on *{trip}*.")
+
+# ─── /updatecar ─────────────────────────────────────────────────────────
+@bolt_app.command("/updatecar")
+def cmd_updatecar(ack, respond, command):
+    ack()
+    parts = (command.get("text") or "").split()
+    if len(parts) != 2 or not parts[1].startswith("seats="):
+        return eph(respond, "Usage: `/updatecar CarID seats=X`")
+    try:
+        car_id = int(parts[0])
+        new_seats = int(parts[1].split("=")[1])
+    except (ValueError, IndexError):
+        return eph(respond, ":x: Invalid format. Use `/updatecar CarID seats=X`")
+    if new_seats < 1:
+        return eph(respond, ":x: Seats must be at least 1.")
+    user = command["user_id"]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT created_by, trip FROM cars WHERE id=%s", (car_id,))
+        row = cur.fetchone()
+    if not row:
+        return eph(respond, f":x: Car `{car_id}` does not exist.")
+    if row[0] != user:
+        return eph(respond, ":x: Only the creator can update this car.")
+    trip = row[1]
+    # Check if new seat count would be less than current members
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM car_members WHERE car_id=%s", (car_id,))
+        current_members = cur.fetchone()[0]
+    if new_seats < current_members:
+        return eph(respond, f":x: Cannot reduce seats to {new_seats}. Car has {current_members} members.")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE cars SET seats=%s WHERE id=%s", (new_seats, car_id))
+        conn.commit()
+    eph(respond, f":gear: Updated car `{car_id}` to {new_seats} seats.")
+    post_announce(trip, f":gear: <@{user}> updated car `{car_id}` to {new_seats} seats on *{trip}*.")
+
+# ─── /removeuser ────────────────────────────────────────────────────────
+@bolt_app.command("/removeuser")
+def cmd_removeuser(ack, respond, command):
+    ack()
+    parts = (command.get("text") or "").split()
+    if len(parts) != 2:
+        return eph(respond, "Usage: `/removeuser CarID @user`")
+    try:
+        car_id = int(parts[0])
+    except ValueError:
+        return eph(respond, ":x: CarID must be a number.")
+    target_user = parts[1].strip("<@>")
+    user = command["user_id"]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT created_by, trip FROM cars WHERE id=%s", (car_id,))
+        row = cur.fetchone()
+    if not row:
+        return eph(respond, f":x: Car `{car_id}` does not exist.")
+    if row[0] != user:
+        return eph(respond, ":x: Only the creator can remove users from this car.")
+    if row[0] == target_user:
+        return eph(respond, ":x: You cannot remove yourself. Use `/removecar` to delete the car.")
+    trip = row[1]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, target_user))
+        if cur.rowcount == 0:
+            return eph(respond, f":x: <@{target_user}> is not in car `{car_id}`.")
+        conn.commit()
+    eph(respond, f":boot: Removed <@{target_user}> from car `{car_id}`.")
+    bolt_app.client.chat_postMessage(channel=target_user, text=f":boot: You were removed from car `{car_id}` on *{trip}*.")
+    post_announce(trip, f":boot: <@{user}> removed <@{target_user}> from car `{car_id}` on *{trip}*.")
+
+# ─── /removecar ─────────────────────────────────────────────────────────
+@bolt_app.command("/removecar")
+def cmd_removecar(ack, respond, command):
+    ack()
+    try:
+        car_id = int((command.get("text") or "").strip())
+    except ValueError:
+        return eph(respond, "Usage: `/removecar CarID`")
+    user = command["user_id"]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT created_by, trip, name FROM cars WHERE id=%s", (car_id,))
+        row = cur.fetchone()
+    if not row:
+        return eph(respond, f":x: Car `{car_id}` does not exist.")
+    if row[0] != user:
+        return eph(respond, ":x: Only the creator can delete this car.")
+    trip, name = row[1], row[2]
+    # Get members to notify them
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM car_members WHERE car_id=%s AND user_id != %s", (car_id, user))
+        members = [r[0] for r in cur.fetchall()]
+        # Delete the car (cascades to members and join requests)
+        cur.execute("DELETE FROM cars WHERE id=%s", (car_id,))
+        conn.commit()
+    # Notify members
+    for member in members:
+        bolt_app.client.chat_postMessage(channel=member, text=f":wastebasket: Car `{car_id}` (*{name}*) on *{trip}* was deleted by its creator.")
+    eph(respond, f":wastebasket: Deleted car `{car_id}` (*{name}*).")
+    post_announce(trip, f":wastebasket: <@{user}> deleted car `{car_id}` (*{name}*) on *{trip}*.")
+
+# ─── /mycars ────────────────────────────────────────────────────────────
+@bolt_app.command("/mycars")
+def cmd_mycars(ack, respond, command):
+    ack()
+    trip = (command.get("text") or "").strip()
+    if not trip:
+        return eph(respond, "Usage: `/mycars TripName`")
+    user = command["user_id"]
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        # Cars I created
+        cur.execute(
+            "SELECT id, name, seats FROM cars WHERE trip=%s AND created_by=%s ORDER BY id",
+            (trip, user)
+        )
+        created = cur.fetchall()
+        # Cars I joined (but didn't create)
+        cur.execute(
+            """
+            SELECT c.id, c.name, c.seats
+            FROM cars c
+            JOIN car_members m ON m.car_id = c.id
+            WHERE c.trip=%s AND m.user_id=%s AND c.created_by != %s
+            ORDER BY c.id
+            """, (trip, user, user)
+        )
+        joined = cur.fetchall()
+    if not created and not joined:
+        return eph(respond, f"You have no cars on *{trip}*.")
+    lines = []
+    if created:
+        lines.append("*Cars you created:*")
+        for c in created:
+            lines.append(f"• `{c['id']}`: *{c['name']}* ({c['seats']} seats)")
+    if joined:
+        if lines:
+            lines.append("")
+        lines.append("*Cars you joined:*")
+        for c in joined:
+            lines.append(f"• `{c['id']}`: *{c['name']}* ({c['seats']} seats)")
+    eph(respond, f"Your cars on *{trip}*:\n" + "\n".join(lines))
+
+# ─── /mytrips ───────────────────────────────────────────────────────────
+@bolt_app.command("/mytrips")
+def cmd_mytrips(ack, respond, command):
+    ack()
+    user = command["user_id"]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Trips where I created a trip or car, or joined a car
+        cur.execute(
+            """
+            SELECT DISTINCT t.name
+            FROM trips t
+            LEFT JOIN cars c ON c.trip = t.name
+            LEFT JOIN car_members m ON m.car_id = c.id
+            WHERE t.created_by = %s OR c.created_by = %s OR m.user_id = %s
+            ORDER BY t.name
+            """, (user, user, user)
+        )
+        trips = [row[0] for row in cur.fetchall()]
+    if not trips:
+        return eph(respond, "You haven't joined or created any trips yet.")
+    lines = [f"• *{trip}*" for trip in trips]
+    eph(respond, f"Your trips:\n" + "\n".join(lines))
+
+# ─── /needride ──────────────────────────────────────────────────────────
+@bolt_app.command("/needride")
+def cmd_needride(ack, respond, command):
+    ack()
+    trip = (command.get("text") or "").strip()
+    if not trip:
+        return eph(respond, "Usage: `/needride TripName`")
+    channel_id = command["channel_id"]
+    
+    # Get all members of this channel
+    channel_members = get_channel_members(channel_id)
+    if not channel_members:
+        return eph(respond, ":x: Could not retrieve channel members.")
+    
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Check if trip exists in this channel
+        cur.execute("SELECT 1 FROM trips WHERE name=%s AND channel_id=%s", (trip, channel_id))
+        if not cur.fetchone():
+            return eph(respond, f":x: Trip *{trip}* does not exist in this channel.")
+        
+        # Get channel members who are NOT in any car for this trip
+        cur.execute(
+            """
+            SELECT DISTINCT m.user_id
+            FROM car_members m
+            JOIN cars c ON c.id = m.car_id
+            WHERE c.trip = %s AND c.channel_id = %s
+            """, (trip, channel_id)
+        )
+        members_with_rides = {row['user_id'] for row in cur.fetchall()}
+    
+    # Find channel members who need rides
+    members_needing_rides = [user_id for user_id in channel_members if user_id not in members_with_rides]
+    
+    if not members_needing_rides:
+        return eph(respond, f"All channel members already have rides for *{trip}*!")
+    
+    # Show available cars with space
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(
+            """
+            SELECT c.id, c.name, c.seats, c.created_by, COUNT(m.user_id) as filled
+            FROM cars c
+            LEFT JOIN car_members m ON m.car_id = c.id
+            WHERE c.trip = %s AND c.channel_id = %s
+            GROUP BY c.id, c.name, c.seats, c.created_by
+            HAVING COUNT(m.user_id) < c.seats
+            ORDER BY c.id
+            """, (trip, channel_id)
+        )
+        available_cars = cur.fetchall()
+    
+    response_lines = []
+    
+    # Show members who need rides
+    member_mentions = [f"<@{user_id}>" for user_id in members_needing_rides]
+    response_lines.append(f"**Channel members who need rides for *{trip}*:**")
+    response_lines.append(", ".join(member_mentions))
+    response_lines.append("")
+    
+    # Show available cars
+    if available_cars:
+        response_lines.append("**Available cars with space:**")
+        for car in available_cars:
+            available_seats = car['seats'] - car['filled']
+            response_lines.append(f"• `{car['id']}`: *{car['name']}* - {available_seats} seats available (created by <@{car['created_by']}>)")
+        response_lines.append("")
+        response_lines.append("Use `/requestjoin CarID` to join a car!")
+    else:
+        response_lines.append("**No cars with available space.** Someone should create a new car with `/createcar`!")
+    
+    eph(respond, "\n".join(response_lines))
 
 # ─── WSGI entrypoint ─────────────────────────────────────────────────────
 @flask_app.route("/slack/events", methods=["POST"])
