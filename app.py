@@ -42,7 +42,7 @@ if client_id and client_secret:
     oauth_settings = OAuthSettings(
         client_id=client_id,
         client_secret=client_secret,
-        scopes=["commands", "chat:write", "groups:read", "im:write"]
+        scopes=["commands", "chat:write", "groups:read", "im:write", "users:read"]
     )
     bolt_app = App(
         signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
