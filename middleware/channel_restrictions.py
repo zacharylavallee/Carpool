@@ -67,24 +67,30 @@ def register_channel_restrictions(bolt_app):
                         # For slash commands (identified by presence of "command" key), provide an error response
                         if is_slash_command:
                             print("📤 Sending error response for blocked slash command")
-                            import json
-                            import urllib3
                             
                             response_url = body.get("response_url")
                             if response_url:
-                                http = urllib3.PoolManager()
-                                error_response = {
-                                    "response_type": "ephemeral",
-                                    "text": f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
-                                }
                                 try:
-                                    http.request(
-                                        'POST',
+                                    # Use the Slack client's built-in response method
+                                    import requests
+                                    import json
+                                    
+                                    error_response = {
+                                        "response_type": "ephemeral",
+                                        "text": f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
+                                    }
+                                    
+                                    response = requests.post(
                                         response_url,
-                                        body=json.dumps(error_response),
+                                        json=error_response,
                                         headers={'Content-Type': 'application/json'}
                                     )
-                                    print("✅ Error response sent successfully")
+                                    
+                                    if response.status_code == 200:
+                                        print("✅ Error response sent successfully")
+                                    else:
+                                        print(f"❌ Error response failed: {response.status_code} - {response.text}")
+                                        
                                 except Exception as e:
                                     print(f"❌ Failed to send error response: {e}")
                             else:
