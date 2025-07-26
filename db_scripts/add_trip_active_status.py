@@ -98,8 +98,63 @@ def migrate_trip_active_status():
             print("🔧 Adding new primary key on 'name' column...")
             cur.execute("ALTER TABLE trips ADD CONSTRAINT trips_pkey PRIMARY KEY (name)")
             
+            # Clean up orphaned data before recreating foreign keys
+            print("📋 Step 4: Cleaning up orphaned data...")
+            
+            # Find cars that reference non-existent trips
+            cur.execute("""
+                SELECT c.id, c.trip, c.name, c.created_by
+                FROM cars c
+                LEFT JOIN trips t ON c.trip = t.name
+                WHERE t.name IS NULL
+            """)
+            orphaned_cars = cur.fetchall()
+            
+            if orphaned_cars:
+                print(f"   Found {len(orphaned_cars)} orphaned cars:")
+                for car_id, trip_name, car_name, creator in orphaned_cars:
+                    print(f"   - Car ID {car_id}: {car_name} (trip: {trip_name}, creator: {creator})")
+                
+                # Delete orphaned car members first
+                cur.execute("""
+                    DELETE FROM car_members 
+                    WHERE car_id IN (
+                        SELECT c.id FROM cars c
+                        LEFT JOIN trips t ON c.trip = t.name
+                        WHERE t.name IS NULL
+                    )
+                """)
+                deleted_members = cur.rowcount
+                print(f"   🗑️ Deleted {deleted_members} orphaned car members")
+                
+                # Delete join requests for orphaned cars
+                cur.execute("""
+                    DELETE FROM join_requests 
+                    WHERE car_id IN (
+                        SELECT c.id FROM cars c
+                        LEFT JOIN trips t ON c.trip = t.name
+                        WHERE t.name IS NULL
+                    )
+                """)
+                deleted_requests = cur.rowcount
+                print(f"   🗑️ Deleted {deleted_requests} orphaned join requests")
+                
+                # Delete orphaned cars
+                cur.execute("""
+                    DELETE FROM cars 
+                    WHERE id IN (
+                        SELECT c.id FROM cars c
+                        LEFT JOIN trips t ON c.trip = t.name
+                        WHERE t.name IS NULL
+                    )
+                """)
+                deleted_cars = cur.rowcount
+                print(f"   🗑️ Deleted {deleted_cars} orphaned cars")
+            else:
+                print("   ✅ No orphaned cars found")
+            
             # Recreate foreign keys if needed (but they should reference trip name, not channel_id)
-            print("📋 Step 4: Updating foreign key references...")
+            print("📋 Step 5: Updating foreign key references...")
             for constraint_name, table_name, column_name, foreign_table, foreign_column in fk_to_recreate:
                 if table_name == 'cars' and column_name == 'channel_id':
                     # The cars table should reference trips by trip name, not channel_id
@@ -121,7 +176,7 @@ def migrate_trip_active_status():
                     else:
                         print(f"⚠️ Warning: cars.trip column not found, skipping foreign key recreation")
             
-            print("📋 Step 5: Adding unique constraint for active trips per channel...")
+            print("📋 Step 6: Adding unique constraint for active trips per channel...")
             
             # Add unique constraint: only one active trip per channel
             cur.execute("""
@@ -131,7 +186,7 @@ def migrate_trip_active_status():
             """)
             print("✅ Added unique constraint for active trips per channel")
             
-            print("📋 Step 6: Verifying migration...")
+            print("📋 Step 7: Verifying migration...")
             
             # Verify the new structure
             cur.execute("""
