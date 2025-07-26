@@ -19,7 +19,7 @@ from commands.car import register_car_commands
 from commands.member import register_member_commands
 from commands.manage import register_manage_commands
 from commands.user import register_user_commands
-from commands.settings import register_settings_commands
+
 
 # ─── Logging ─────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +41,7 @@ register_car_commands(bolt_app)
 register_member_commands(bolt_app)
 register_manage_commands(bolt_app)
 register_user_commands(bolt_app)
-register_settings_commands(bolt_app)
+
 
 # ─── Flask app for WSGI ──────────────────────────────────────────────────
 flask_app = Flask(__name__)

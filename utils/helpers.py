@@ -29,14 +29,9 @@ def get_active_trip(channel_id: str):
         return row if row else None
 
 def post_announce(trip: str, channel_id: str, text: str):
-    """Post announcement to trip's announcement channel if configured"""
+    """Post announcement to the trip's channel"""
     from app import bolt_app  # Import here to avoid circular imports
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT announcement_channel_id FROM trip_settings WHERE trip=%s AND channel_id=%s", (trip, channel_id))
-        row = cur.fetchone()
-        if row:
-            bolt_app.client.chat_postMessage(channel=row[0], text=text)
+    bolt_app.client.chat_postMessage(channel=channel_id, text=text)
 
 def get_username(user_id: str):
     """Get username for a user ID, with fallback to mention format"""

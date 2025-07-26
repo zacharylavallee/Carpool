@@ -67,13 +67,5 @@ def init_db():
             requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY(car_id, user_id)
         )""")
-        # Trip settings
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS trip_settings (
-            trip TEXT,
-            channel_id TEXT,
-            announcement_channel_id TEXT NOT NULL,
-            PRIMARY KEY(trip, channel_id),
-            FOREIGN KEY(trip, channel_id) REFERENCES trips(name, channel_id) ON DELETE CASCADE
-        )""")
+
         conn.commit()
