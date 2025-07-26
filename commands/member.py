@@ -4,7 +4,7 @@ Member management commands for the carpool bot
 import psycopg2
 import psycopg2.extras
 from config.database import get_conn
-from utils.helpers import eph, post_announce
+from utils.helpers import eph, post_announce, get_channel_members
 from utils.channel_guard import check_bot_channel_access
 
 def register_member_commands(bolt_app):
