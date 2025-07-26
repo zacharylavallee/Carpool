@@ -134,12 +134,23 @@ def register_trip_commands(bolt_app):
                 eph(respond, f":round_pushpin: Trip *{trip}* activated for this channel.")
             else:
                 # Create new trip
-                cur.execute(
-                    "INSERT INTO trips(name, channel_id, created_by, active) VALUES(%s,%s,%s,TRUE)",
-                    (trip, channel_id, user)
-                )
-                conn.commit()
-                eph(respond, f":round_pushpin: Trip *{trip}* created and activated for this channel.")
+                try:
+                    cur.execute(
+                        "INSERT INTO trips(name, channel_id, created_by, active) VALUES(%s,%s,%s,TRUE)",
+                        (trip, channel_id, user)
+                    )
+                    conn.commit()
+                    eph(respond, f":round_pushpin: Trip *{trip}* created and activated for this channel.")
+                except psycopg2.errors.UniqueViolation:
+                    # Trip name already exists globally - this shouldn't happen if our logic above is correct
+                    # But handle it gracefully by trying to activate the existing trip
+                    conn.rollback()
+                    cur.execute(
+                        "UPDATE trips SET channel_id=%s, active=TRUE, created_at=CURRENT_TIMESTAMP WHERE name=%s",
+                        (channel_id, trip)
+                    )
+                    conn.commit()
+                    eph(respond, f":round_pushpin: Trip *{trip}* activated for this channel (recovered from duplicate key error).")
 
     @bolt_app.action("approve_trip_overwrite")
     def act_approve_trip_overwrite(ack, body, client):

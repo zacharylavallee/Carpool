@@ -102,17 +102,66 @@ def register_channel_restrictions(bolt_app):
                         
                         # Don't call next() - this blocks the request
                         print("🚫 REQUEST BLOCKED - not calling next()")
+                        # Provide a proper response to avoid NO MATCH error
                         return
                 else:
                     print(f"❌ Failed to get channel info: {channel_info.get('error', 'unknown error')}")
                     # If we can't get channel info, assume it's public and block for safety
                     print("🚫 BLOCKING due to API error - assuming public channel for safety")
+                    # Send error response for safety
+                    response_url = body.get("response_url")
+                    if response_url:
+                        try:
+                            import urllib.request
+                            import urllib.parse
+                            import json
+                            
+                            error_response = {
+                                "response_type": "ephemeral",
+                                "text": "This bot is intented to be used in private channels only to limit spam notifications."
+                            }
+                            
+                            data = json.dumps(error_response).encode('utf-8')
+                            req = urllib.request.Request(
+                                response_url,
+                                data=data,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            
+                            with urllib.request.urlopen(req) as response:
+                                pass
+                        except Exception as e:
+                            print(f"❌ Failed to send error response: {e}")
                     return
                     
             except Exception as e:
                 print(f"❌ Exception getting channel info: {e}")
                 # If there's an exception, assume it's public and block for safety
                 print("🚫 BLOCKING due to exception - assuming public channel for safety")
+                # Send error response for safety
+                response_url = body.get("response_url")
+                if response_url:
+                    try:
+                        import urllib.request
+                        import urllib.parse
+                        import json
+                        
+                        error_response = {
+                            "response_type": "ephemeral",
+                            "text": "This bot is intented to be used in private channels only to limit spam notifications."
+                        }
+                        
+                        data = json.dumps(error_response).encode('utf-8')
+                        req = urllib.request.Request(
+                            response_url,
+                            data=data,
+                            headers={'Content-Type': 'application/json'}
+                        )
+                        
+                        with urllib.request.urlopen(req) as response:
+                            pass
+                    except Exception as e:
+                        print(f"❌ Failed to send error response: {e}")
                 return
         else:
             print("⚠️ No channel_id found, allowing request")
