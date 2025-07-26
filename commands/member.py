@@ -212,28 +212,63 @@ def register_member_commands(bolt_app):
                 from app import bolt_app
                 # Get channel members to search through
                 channel_members = get_channel_members(channel_id)
-                print(f"🔍 /boot found {len(channel_members)} channel members")
+                print(f"🔍 /boot found {len(channel_members)} channel members: {channel_members[:5]}...")  # Show first 5 for debugging
+                
+                if not channel_members:
+                    print(f"❌ /boot no channel members found - this might be a permissions issue")
+                    return eph(respond, f":x: Could not retrieve channel members. Make sure the bot has proper permissions and is added to this channel.")
+                
+                found_users = []  # Track all users we check for better debugging
                 
                 for member_id in channel_members:
                     try:
                         user_info = bolt_app.client.users_info(user=member_id)
                         user_data = user_info["user"]
                         
+                        # Skip bots
+                        if user_data.get("is_bot", False):
+                            continue
+                            
                         # Check various name fields
                         display_name = user_data.get("display_name", "")
                         real_name = user_data.get("real_name", "")
                         name = user_data.get("name", "")
                         
-                        # Case-insensitive matching
-                        if (search_name.lower() in display_name.lower() or 
-                            search_name.lower() in real_name.lower() or 
-                            search_name.lower() == name.lower()):
+                        found_users.append(f"{name}({real_name})")
+                        
+                        # More flexible matching - try multiple approaches
+                        search_lower = search_name.lower()
+                        
+                        # Exact username match
+                        if search_lower == name.lower():
                             target_user = member_id
-                            print(f"✅ /boot found user by name: '{search_name}' -> {member_id} ({real_name})")
+                            print(f"✅ /boot found exact username match: '{search_name}' -> {member_id} (@{name})")
                             break
+                            
+                        # Contains match in real name or display name
+                        if (search_lower in real_name.lower() or 
+                            search_lower in display_name.lower()):
+                            target_user = member_id
+                            print(f"✅ /boot found name match: '{search_name}' -> {member_id} ({real_name})")
+                            break
+                            
+                        # Try matching parts of the name (e.g., "rohrbaugh.joshua" matches "rohrbaugh")
+                        name_parts = search_lower.replace('.', ' ').split()
+                        for part in name_parts:
+                            if (part in real_name.lower() or 
+                                part in display_name.lower() or 
+                                part in name.lower()):
+                                target_user = member_id
+                                print(f"✅ /boot found partial match: '{part}' in user {member_id} ({real_name})")
+                                break
+                        if target_user:
+                            break
+                            
                     except Exception as e:
                         print(f"❌ /boot error checking user {member_id}: {e}")
                         continue
+                
+                print(f"🔍 /boot checked users: {found_users[:10]}...")  # Show first 10 users we found
                         
             except Exception as e:
                 print(f"❌ /boot error searching for user by name: {e}")
