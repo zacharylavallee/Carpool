@@ -20,7 +20,7 @@ def register_user_commands(bolt_app):
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
         if not trip_info:
-            return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+            return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
         trip = trip_info[0]
         
         # Get all members of this channel

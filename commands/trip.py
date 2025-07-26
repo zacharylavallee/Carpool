@@ -8,12 +8,12 @@ from utils.helpers import eph
 def register_trip_commands(bolt_app):
     """Register trip management commands"""
     
-    @bolt_app.command("/createtrip")
-    def cmd_createtrip(ack, respond, command):
+    @bolt_app.command("/trip")
+    def cmd_trip(ack, respond, command):
         ack()
         trip = (command.get("text") or "").strip()
         if not trip:
-            return eph(respond, "Usage: `/createtrip TripName`")
+            return eph(respond, "Usage: `/trip TripName`")
         user = command["user_id"]
         channel_id = command["channel_id"]
         with get_conn() as conn:

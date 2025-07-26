@@ -9,12 +9,12 @@ from utils.helpers import eph, get_active_trip, post_announce, get_username, get
 def register_car_commands(bolt_app):
     """Register car management commands"""
     
-    @bolt_app.command("/createcar")
-    def cmd_createcar(ack, respond, command):
+    @bolt_app.command("/car")
+    def cmd_car(ack, respond, command):
         ack()
         seats_str = (command.get("text") or "").strip()
         if not seats_str:
-            return eph(respond, "Usage: `/createcar seats`")
+            return eph(respond, "Usage: `/car seats` (e.g., `/car 4`)") 
         try:
             seats = int(seats_str)
         except ValueError:
@@ -25,7 +25,7 @@ def register_car_commands(bolt_app):
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
         if not trip_info:
-            return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+            return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
         trip = trip_info[0]
         
         # Get username for car naming
@@ -52,15 +52,15 @@ def register_car_commands(bolt_app):
         eph(respond, f":car: Created *{name}* (ID `{car_id}`) with *{seats}* seats.")
         post_announce(trip, channel_id, f":car: <@{user}> created *{name}* (ID `{car_id}`) on *{trip}*.")
 
-    @bolt_app.command("/listcars")
-    def cmd_listcars(ack, respond, command):
+    @bolt_app.command("/list")
+    def cmd_list(ack, respond, command):
         ack()
         channel_id = command["channel_id"]
         
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
         if not trip_info:
-            return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+            return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
         trip = trip_info[0]
         
         with get_conn() as conn:
@@ -84,15 +84,15 @@ def register_car_commands(bolt_app):
         ]
         eph(respond, f"Cars on *{trip}* in this channel:\n" + "\n".join(lines))
 
-    @bolt_app.command("/carstatus")
-    def cmd_carstatus(ack, respond, command):
+    @bolt_app.command("/status")
+    def cmd_status(ack, respond, command):
         ack()
         channel_id = command["channel_id"]
         
         # Get the active trip for this channel
         trip_info = get_active_trip(channel_id)
         if not trip_info:
-            return eph(respond, ":x: No active trip in this channel. Create one with `/createtrip TripName` first.")
+            return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
         trip = trip_info[0]
         
         with get_conn() as conn:

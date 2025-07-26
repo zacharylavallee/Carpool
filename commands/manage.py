@@ -8,17 +8,17 @@ from utils.helpers import eph, post_announce
 def register_manage_commands(bolt_app):
     """Register car management commands"""
     
-    @bolt_app.command("/updatecar")
-    def cmd_updatecar(ack, respond, command):
+    @bolt_app.command("/update")
+    def cmd_update(ack, respond, command):
         ack()
         parts = (command.get("text") or "").split()
         if len(parts) != 2 or not parts[1].startswith("seats="):
-            return eph(respond, "Usage: `/updatecar CarID seats=X`")
+            return eph(respond, "Usage: `/update CarID seats=X` (e.g., `/update 1 seats=5`)") 
         try:
             car_id = int(parts[0])
             new_seats = int(parts[1].split("=")[1])
         except (ValueError, IndexError):
-            return eph(respond, ":x: Invalid format. Use `/updatecar CarID seats=X`")
+            return eph(respond, ":x: Invalid format. Use `/update CarID seats=X`")
         user = command["user_id"]
         channel_id = command["channel_id"]
         
@@ -47,12 +47,12 @@ def register_manage_commands(bolt_app):
         eph(respond, f":gear: Updated car `{car_id}` to {new_seats} seats.")
         post_announce(trip, channel_id, f":gear: <@{user}> updated car `{car_id}` to {new_seats} seats on *{trip}*.")
 
-    @bolt_app.command("/removecar")
-    def cmd_removecar(ack, respond, command):
+    @bolt_app.command("/delete")
+    def cmd_delete(ack, respond, command):
         ack()
         car_id_str = (command.get("text") or "").strip()
         if not car_id_str:
-            return eph(respond, "Usage: `/removecar CarID`")
+            return eph(respond, "Usage: `/delete CarID`")
         try:
             car_id = int(car_id_str)
         except ValueError:
