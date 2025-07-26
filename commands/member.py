@@ -190,17 +190,56 @@ def register_member_commands(bolt_app):
         if not user_mention:
             return eph(respond, "Usage: `/boot @user`")
         
-        # Extract user ID from mention
-        if not user_mention.startswith("<@") or not user_mention.endswith(">"):
-            print(f"❌ /boot mention format invalid: starts with '<@': {user_mention.startswith('<@')}, ends with '>': {user_mention.endswith('>')}")
-            return eph(respond, f":x: Please mention a user like @username (received: '{user_mention}')")
+        # Extract user ID from mention - handle multiple formats
+        target_user = None
         
-        # Remove <@ and >, then handle both formats: <@U123> and <@U123|username>
-        mention_content = user_mention[2:-1]
-        if "|" in mention_content:
-            target_user = mention_content.split("|")[0]  # Take only the user ID part
+        # Format 1: Proper Slack mention <@U123456789> or <@U123456789|username>
+        if user_mention.startswith("<@") and user_mention.endswith(">"):
+            mention_content = user_mention[2:-1]
+            if "|" in mention_content:
+                target_user = mention_content.split("|")[0]  # Take only the user ID part
+            else:
+                target_user = mention_content
+            print(f"✅ /boot parsed Slack mention format: target_user='{target_user}'")
+        
+        # Format 2: Display name format - try to find user by display name or real name
         else:
-            target_user = mention_content
+            # Remove @ if present at the start
+            search_name = user_mention.lstrip('@')
+            print(f"🔍 /boot trying to find user by name: '{search_name}'")
+            
+            try:
+                from app import bolt_app
+                # Get channel members to search through
+                channel_members = get_channel_members(channel_id)
+                print(f"🔍 /boot found {len(channel_members)} channel members")
+                
+                for member_id in channel_members:
+                    try:
+                        user_info = bolt_app.client.users_info(user=member_id)
+                        user_data = user_info["user"]
+                        
+                        # Check various name fields
+                        display_name = user_data.get("display_name", "")
+                        real_name = user_data.get("real_name", "")
+                        name = user_data.get("name", "")
+                        
+                        # Case-insensitive matching
+                        if (search_name.lower() in display_name.lower() or 
+                            search_name.lower() in real_name.lower() or 
+                            search_name.lower() == name.lower()):
+                            target_user = member_id
+                            print(f"✅ /boot found user by name: '{search_name}' -> {member_id} ({real_name})")
+                            break
+                    except Exception as e:
+                        print(f"❌ /boot error checking user {member_id}: {e}")
+                        continue
+                        
+            except Exception as e:
+                print(f"❌ /boot error searching for user by name: {e}")
+        
+        if not target_user:
+            return eph(respond, f":x: Could not find user '{user_mention}'. Please use @mention to select the user from the dropdown, or make sure they're in this channel.")
         
         user = command["user_id"]
         
