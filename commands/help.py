@@ -14,7 +14,6 @@ def register_help_commands(bolt_app):
             "`/help` – show this help message\n"
             "`/createtrip TripName` – create/replace the trip for this channel\n"
             "`/deletetrip TripName` – delete a trip\n"
-
             "`/createcar seats` – create & join car (auto-named)\n"
             "`/listcars` – list cars on the active trip\n"
             "`/carstatus` – show fill & members\n"
