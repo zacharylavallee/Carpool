@@ -47,7 +47,37 @@ def migrate_trip_active_status():
                 cur.execute("ALTER TABLE trips ALTER COLUMN active SET NOT NULL")
                 print("✅ Added 'active' column")
             
-            print("📋 Step 2: Updating primary key constraints...")
+            print("📋 Step 2: Handling foreign key dependencies...")
+            
+            # First, check what foreign keys reference trips
+            cur.execute("""
+                SELECT 
+                    tc.constraint_name,
+                    tc.table_name,
+                    kcu.column_name,
+                    ccu.table_name AS foreign_table_name,
+                    ccu.column_name AS foreign_column_name
+                FROM information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                JOIN information_schema.constraint_column_usage AS ccu
+                    ON ccu.constraint_name = tc.constraint_name
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+                    AND ccu.table_name = 'trips'
+            """)
+            foreign_keys = cur.fetchall()
+            print(f"   Foreign keys referencing trips: {foreign_keys}")
+            
+            # Drop foreign key constraints that reference trips.channel_id
+            fk_to_recreate = []
+            for fk in foreign_keys:
+                constraint_name, table_name, column_name, foreign_table, foreign_column = fk
+                if foreign_column == 'channel_id':
+                    print(f"🗑️ Dropping foreign key: {constraint_name} on {table_name}({column_name})")
+                    cur.execute(f"ALTER TABLE {table_name} DROP CONSTRAINT {constraint_name}")
+                    fk_to_recreate.append((constraint_name, table_name, column_name, foreign_table, foreign_column))
+            
+            print("📋 Step 3: Updating primary key constraints...")
             
             # Check current primary key
             cur.execute("""
@@ -68,7 +98,30 @@ def migrate_trip_active_status():
             print("🔧 Adding new primary key on 'name' column...")
             cur.execute("ALTER TABLE trips ADD CONSTRAINT trips_pkey PRIMARY KEY (name)")
             
-            print("📋 Step 3: Adding unique constraint for active trips per channel...")
+            # Recreate foreign keys if needed (but they should reference trip name, not channel_id)
+            print("📋 Step 4: Updating foreign key references...")
+            for constraint_name, table_name, column_name, foreign_table, foreign_column in fk_to_recreate:
+                if table_name == 'cars' and column_name == 'channel_id':
+                    # The cars table should reference trips by trip name, not channel_id
+                    # But first check if cars.trip column exists and references trips properly
+                    cur.execute("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'cars' AND column_name = 'trip'
+                    """)
+                    trip_column_exists = cur.fetchone() is not None
+                    
+                    if trip_column_exists:
+                        print(f"🔧 Creating foreign key: cars(trip) -> trips(name)")
+                        cur.execute("""
+                            ALTER TABLE cars 
+                            ADD CONSTRAINT cars_trip_fkey 
+                            FOREIGN KEY (trip) REFERENCES trips(name) ON DELETE CASCADE
+                        """)
+                    else:
+                        print(f"⚠️ Warning: cars.trip column not found, skipping foreign key recreation")
+            
+            print("📋 Step 5: Adding unique constraint for active trips per channel...")
             
             # Add unique constraint: only one active trip per channel
             cur.execute("""
@@ -78,24 +131,7 @@ def migrate_trip_active_status():
             """)
             print("✅ Added unique constraint for active trips per channel")
             
-            print("📋 Step 4: Updating foreign key references...")
-            
-            # Check if cars table needs updating
-            cur.execute("""
-                SELECT constraint_name 
-                FROM information_schema.table_constraints 
-                WHERE table_name = 'cars' AND constraint_type = 'FOREIGN KEY'
-            """)
-            fk_constraints = cur.fetchall()
-            
-            for constraint in fk_constraints:
-                constraint_name = constraint[0]
-                if 'channel_id' in constraint_name.lower():
-                    print(f"🔧 Updating foreign key constraint: {constraint_name}")
-                    # The cars table should reference trips by name, not channel_id
-                    # This might need manual review based on current schema
-            
-            print("📋 Step 5: Verifying migration...")
+            print("📋 Step 6: Verifying migration...")
             
             # Verify the new structure
             cur.execute("""
