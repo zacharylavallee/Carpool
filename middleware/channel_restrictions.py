@@ -101,14 +101,15 @@ def register_channel_restrictions(bolt_app):
                         return
                 else:
                     print(f"❌ Failed to get channel info: {channel_info.get('error', 'unknown error')}")
-                    # If we can't get channel info, fall back to allowing the request
-                    # (better to be permissive than to break functionality)
-                    print("⚠️ Falling back to allowing request due to API error")
+                    # If we can't get channel info, assume it's public and block for safety
+                    print("🚫 BLOCKING due to API error - assuming public channel for safety")
+                    return
                     
             except Exception as e:
                 print(f"❌ Exception getting channel info: {e}")
-                # If there's an exception, fall back to allowing the request
-                print("⚠️ Falling back to allowing request due to exception")
+                # If there's an exception, assume it's public and block for safety
+                print("🚫 BLOCKING due to exception - assuming public channel for safety")
+                return
         else:
             print("⚠️ No channel_id found, allowing request")
         
