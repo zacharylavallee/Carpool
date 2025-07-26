@@ -378,7 +378,7 @@ def act_approve(ack, body, client):
         conn.commit()
     client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":white_check_mark: Approved <@{user_to_add}> for car `{car_id}`.", blocks=[])
     client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You were approved for car `{car_id}`.")
-    post_announce(trip, f":seat: <@{user_to_add}> joined car `{car_id}` on *{trip}*.")
+    post_announce(trip, channel_id, f":seat: <@{user_to_add}> joined car `{car_id}` on *{trip}*.")
 
 @bolt_app.action("deny_request")
 def act_deny(ack, body, client):
@@ -420,7 +420,7 @@ def cmd_leavecar(ack, respond, command):
         cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user))
         conn.commit()
     eph(respond, f":wave: You left car `{car_id}`.")
-    post_announce(trip, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
+    post_announce(trip, channel_id, f":dash: <@{user}> left car `{car_id}` on *{trip}*.")
 
 # ─── /renamecar ─────────────────────────────────────────────────────────
 @bolt_app.command("/renamecar")
@@ -449,7 +449,7 @@ def cmd_renamecar(ack, respond, command):
         cur.execute("UPDATE cars SET name=%s WHERE id=%s", (new_name, car_id))
         conn.commit()
     eph(respond, f":pencil2: Renamed car `{car_id}` to *{new_name}*.")
-    post_announce(trip, f":pencil2: <@{user}> renamed car `{car_id}` to *{new_name}* on *{trip}*.")
+    post_announce(trip, channel_id, f":pencil2: <@{user}> renamed car `{car_id}` to *{new_name}* on *{trip}*.")
 
 # ─── /updatecar ─────────────────────────────────────────────────────────
 @bolt_app.command("/updatecar")
@@ -487,7 +487,7 @@ def cmd_updatecar(ack, respond, command):
         cur.execute("UPDATE cars SET seats=%s WHERE id=%s", (new_seats, car_id))
         conn.commit()
     eph(respond, f":gear: Updated car `{car_id}` to {new_seats} seats.")
-    post_announce(trip, f":gear: <@{user}> updated car `{car_id}` to {new_seats} seats on *{trip}*.")
+    post_announce(trip, channel_id, f":gear: <@{user}> updated car `{car_id}` to {new_seats} seats on *{trip}*.")
 
 # ─── /removeuser ────────────────────────────────────────────────────────
 @bolt_app.command("/removeuser")
@@ -521,7 +521,7 @@ def cmd_removeuser(ack, respond, command):
         conn.commit()
     eph(respond, f":boot: Removed <@{target_user}> from car `{car_id}`.")
     bolt_app.client.chat_postMessage(channel=target_user, text=f":boot: You were removed from car `{car_id}` on *{trip}*.")
-    post_announce(trip, f":boot: <@{user}> removed <@{target_user}> from car `{car_id}` on *{trip}*.")
+    post_announce(trip, channel_id, f":boot: <@{user}> removed <@{target_user}> from car `{car_id}` on *{trip}*.")
 
 # ─── /removecar ─────────────────────────────────────────────────────────
 @bolt_app.command("/removecar")
@@ -553,7 +553,7 @@ def cmd_removecar(ack, respond, command):
     for member in members:
         bolt_app.client.chat_postMessage(channel=member, text=f":wastebasket: Car `{car_id}` (*{name}*) on *{trip}* was deleted by its creator.")
     eph(respond, f":wastebasket: Deleted car `{car_id}` (*{name}*).")
-    post_announce(trip, f":wastebasket: <@{user}> deleted car `{car_id}` (*{name}*) on *{trip}*.")
+    post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted car `{car_id}` (*{name}*) on *{trip}*.")
 
 # ─── /mycars ────────────────────────────────────────────────────────────
 @bolt_app.command("/mycars")
