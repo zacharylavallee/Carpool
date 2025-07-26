@@ -19,22 +19,24 @@ def register_channel_restrictions(bolt_app):
         print(f"📍 Channel ID: {body.get('channel_id')}")
         print("="*50)
         
-        # Get channel ID from various possible locations
-        channel_id = (
-            body.get("channel_id") or 
-            body.get("event", {}).get("channel") or
-            body.get("channel", {}).get("id") if isinstance(body.get("channel"), dict) else body.get("channel")
-        )
+        # Get channel ID - for slash commands, it's directly in body["channel_id"]
+        channel_id = body.get("channel_id")
         
         # Debug logging
         print(f"🔍 Middleware check: type={body.get('type')}, channel_id={channel_id}")
+        print(f"📝 Raw channel_id from body: {repr(body.get('channel_id'))}")
         
         # Check if this is a button action (block_actions) - these should be allowed through
         # since they're responses to ephemeral messages that were already validated
+        # For slash commands, body["type"] might be None, so check for presence of "command" key
         if body.get("type") == "block_actions":
             print("✅ Allowing block_actions through middleware")
             next()
             return
+        
+        # For slash commands, body["type"] is often None, but "command" key is present
+        is_slash_command = body.get("command") is not None
+        print(f"📝 Is slash command: {is_slash_command} (command: {body.get('command')})")
         
         if channel_id:
             # Use Slack API to check if channel is public or private
@@ -62,8 +64,8 @@ def register_channel_restrictions(bolt_app):
                         # This is a public channel - block it
                         print(f"❌ Blocking public channel: {channel_name}")
                         
-                        # For slash commands, provide an error response
-                        if body.get("type") == "slash_command":
+                        # For slash commands (identified by presence of "command" key), provide an error response
+                        if is_slash_command:
                             print("📤 Sending error response for blocked slash command")
                             import json
                             import urllib3
@@ -89,6 +91,7 @@ def register_channel_restrictions(bolt_app):
                                 print("❌ No response_url found in body")
                         
                         # Don't call next() - this blocks the request
+                        print("🚫 REQUEST BLOCKED - not calling next()")
                         return
                 else:
                     print(f"❌ Failed to get channel info: {channel_info.get('error', 'unknown error')}")
