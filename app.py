@@ -397,6 +397,11 @@ def cmd_leavecar(ack, respond, command):
 def slack_events():
     return handler.handle(request)
 
+# ─── Health‑check endpoint ───────────────────────────────────────────────
+@flask_app.route("/", methods=["GET"])
+def index():
+    return "✅ Carpool bot is running!", 200
+
 if __name__ == "__main__":
     flask_app.run(port=3000)
 
