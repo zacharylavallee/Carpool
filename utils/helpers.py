@@ -10,12 +10,25 @@ def eph(respond, text):
     """Send ephemeral response"""
     respond(text, response_type="ephemeral")
 
-def get_channel_members(channel_id):
-    """Get list of user IDs who are members of the given channel."""
+def get_channel_members(channel_id: str):
+    """Get all human members of a channel (excluding bots)"""
     from app import bolt_app  # Import here to avoid circular imports
     try:
         result = bolt_app.client.conversations_members(channel=channel_id)
-        return result["members"]
+        members = result["members"]
+        
+        # Filter out bot users
+        human_members = []
+        for member_id in members:
+            try:
+                user_info = bolt_app.client.users_info(user=member_id)
+                if not user_info["user"].get("is_bot", False):
+                    human_members.append(member_id)
+            except Exception:
+                # If we can't get user info, assume it's human to be safe
+                human_members.append(member_id)
+        
+        return human_members
     except Exception as e:
         logger.error(f"Error getting channel members: {e}")
         return []
