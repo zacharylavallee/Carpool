@@ -51,6 +51,14 @@ class CodebaseAnalyzer:
     
     def _analyze_file(self, file_path):
         """Analyze a single Python file"""
+        # Skip database management scripts to avoid false positives
+        filename = file_path.name.lower()
+        if any(skip_name in filename for skip_name in [
+            'validate_database', 'fix_database', 'db_sync_checker', 
+            'migration', 'schema', 'backup', 'restore'
+        ]):
+            return
+        
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
@@ -104,6 +112,12 @@ class CodebaseAnalyzer:
     
     def _parse_sql_content(self, sql_content, file_path):
         """Parse SQL content to extract table operations"""
+        # Skip if this looks like a system query (contains system table references)
+        if any(sys_ref in sql_content.lower() for sys_ref in [
+            'information_schema', 'pg_sequences', 'pg_catalog', 'pg_class'
+        ]):
+            return
+        
         # More precise table extraction from actual SQL
         sql_patterns = [
             (r'INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)', 'INSERT'),
