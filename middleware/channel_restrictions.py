@@ -17,6 +17,12 @@ def register_channel_restrictions(bolt_app):
             body.get("channel", {}).get("id") if isinstance(body.get("channel"), dict) else body.get("channel")
         )
         
+        # Check if this is a button action (block_actions) - these should be allowed through
+        # since they're responses to ephemeral messages that were already validated
+        if body.get("type") == "block_actions":
+            next()
+            return
+        
         if channel_id:
             # Channel ID patterns:
             # C* = Public channels (block these)
@@ -26,6 +32,11 @@ def register_channel_restrictions(bolt_app):
             
             if channel_id.startswith("C"):
                 # This is a public channel - block it
+                # For slash commands, we need to provide a proper response
+                if body.get("type") == "slash_command":
+                    from utils.ephemeral import eph
+                    # This will be handled by the command handler's respond function
+                    pass
                 return
         
         # Allow private channels, DMs, and any other cases
