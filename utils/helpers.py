@@ -17,16 +17,29 @@ def get_channel_members(channel_id: str):
         result = bolt_app.client.conversations_members(channel=channel_id)
         members = result["members"]
         
-        # Filter out bot users
+        # Get bot's own user ID to exclude it
+        try:
+            bot_info = bolt_app.client.auth_test()
+            bot_user_id = bot_info["user_id"]
+        except Exception:
+            bot_user_id = None
+        
+        # Filter out bot users and the bot itself
         human_members = []
         for member_id in members:
+            # Skip if this is the bot's own user ID
+            if bot_user_id and member_id == bot_user_id:
+                continue
+                
             try:
                 user_info = bolt_app.client.users_info(user=member_id)
                 if not user_info["user"].get("is_bot", False):
                     human_members.append(member_id)
             except Exception:
                 # If we can't get user info, assume it's human to be safe
-                human_members.append(member_id)
+                # But still exclude if it matches the bot user ID
+                if not (bot_user_id and member_id == bot_user_id):
+                    human_members.append(member_id)
         
         return human_members
     except Exception as e:
