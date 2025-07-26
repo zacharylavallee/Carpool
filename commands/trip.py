@@ -82,45 +82,64 @@ def register_trip_commands(bolt_app):
                         
                         print(f"✅ Cleaned up old trip '{trip}' from inactive channel")
             
-            try:
-                # Try to insert new trip (will fail if channel already has a trip)
+            # Check if this trip name already exists
+            cur.execute("SELECT name, channel_id, created_by, active FROM trips WHERE name=%s", (trip,))
+            existing_trip_with_name = cur.fetchone()
+            
+            if existing_trip_with_name:
+                existing_name, existing_channel, existing_creator, is_active = existing_trip_with_name
+                if existing_channel != channel_id:
+                    # Trip name exists in different channel - check if that channel is active
+                    if is_channel_active(existing_channel):
+                        return eph(respond, f":x: Trip name '*{trip}*' is already used in <#{existing_channel}> by <@{existing_creator}>. Please choose a different name.")
+                    else:
+                        # Original channel is inactive - deactivate the old trip
+                        cur.execute("UPDATE trips SET active = FALSE WHERE name = %s", (trip,))
+                        print(f"🔄 Deactivated trip '{trip}' from inactive channel {existing_channel}")
+            
+            # Check if there's currently an active trip in this channel
+            cur.execute("SELECT name, created_by FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
+            current_active_trip = cur.fetchone()
+            
+            if current_active_trip:
+                current_trip_name, current_creator = current_active_trip
+                
+                # If trying to activate the same trip that's already active
+                if current_trip_name == trip:
+                    return eph(respond, f":information_source: Trip *{trip}* is already active in this channel.")
+                
+                # Check if user can switch the active trip
+                if current_creator != user:
+                    # Check if original creator is still in the channel
+                    channel_members = get_channel_members(channel_id)
+                    if current_creator in channel_members:
+                        # Original creator still in channel - need approval (implement approval flow)
+                        return eph(respond, f":x: Cannot switch from *{current_trip_name}* to *{trip}*. Only the trip creator (<@{current_creator}>) can change the active trip, or they must leave the channel first.")
+                
+                # Deactivate the current trip
+                cur.execute("UPDATE trips SET active = FALSE WHERE channel_id=%s AND active=TRUE", (channel_id,))
+                print(f"🔄 Deactivated trip '{current_trip_name}' in channel {channel_id}")
+            
+            # Try to activate existing trip or create new one
+            cur.execute("SELECT name FROM trips WHERE name=%s", (trip,))
+            trip_exists = cur.fetchone()
+            
+            if trip_exists:
+                # Trip exists - activate it for this channel
                 cur.execute(
-                    "INSERT INTO trips(name, channel_id, created_by) VALUES(%s,%s,%s)",
+                    "UPDATE trips SET channel_id=%s, active=TRUE, created_at=CURRENT_TIMESTAMP WHERE name=%s",
+                    (channel_id, trip)
+                )
+                conn.commit()
+                eph(respond, f":round_pushpin: Trip *{trip}* activated for this channel.")
+            else:
+                # Create new trip
+                cur.execute(
+                    "INSERT INTO trips(name, channel_id, created_by, active) VALUES(%s,%s,%s,TRUE)",
                     (trip, channel_id, user)
                 )
                 conn.commit()
-                eph(respond, f":round_pushpin: Trip *{trip}* created for this channel.")
-            except psycopg2.errors.UniqueViolation:
-                # Rollback the failed transaction
-                conn.rollback()
-                
-                # Check if there's an existing trip and who created it
-                cur.execute("SELECT name, created_by FROM trips WHERE channel_id=%s", (channel_id,))
-                existing_trip = cur.fetchone()
-                if not existing_trip:
-                    return eph(respond, ":x: Unexpected error - no existing trip found.")
-                
-                existing_trip_name, original_creator = existing_trip
-                
-                # If the same user is trying to update their own trip, allow it
-                if original_creator == user:
-                    cur.execute(
-                        "UPDATE trips SET name=%s, created_at=CURRENT_TIMESTAMP WHERE channel_id=%s",
-                        (trip, channel_id)
-                    )
-                    conn.commit()
-                    return eph(respond, f":round_pushpin: Trip *{trip}* updated (you created the original trip).")
-                
-                # Check if original creator is still in the channel
-                channel_members = get_channel_members(channel_id)
-                if original_creator not in channel_members:
-                    # Original creator is no longer in channel, allow overwrite
-                    cur.execute(
-                        "UPDATE trips SET name=%s, created_by=%s, created_at=CURRENT_TIMESTAMP WHERE channel_id=%s",
-                        (trip, user, channel_id)
-                    )
-                    conn.commit()
-                    return eph(respond, f":round_pushpin: Trip *{trip}* replaced the existing trip (original creator no longer in channel).")
+                eph(respond, f":round_pushpin: Trip *{trip}* created and activated for this channel.")
                 
                 # Original creator is still in channel, send approval request
                 from app import bolt_app as app
