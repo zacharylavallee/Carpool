@@ -71,28 +71,20 @@ def register_channel_restrictions(bolt_app):
                             response_url = body.get("response_url")
                             if response_url:
                                 try:
-                                    # Use the Slack client's built-in response method
-                                    import requests
-                                    import json
+                                    # Use the Slack client directly
+                                    from app import bolt_app as app
                                     
-                                    error_response = {
-                                        "response_type": "ephemeral",
-                                        "text": f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
-                                    }
-                                    
-                                    response = requests.post(
-                                        response_url,
-                                        json=error_response,
-                                        headers={'Content-Type': 'application/json'}
+                                    # Send ephemeral response using Slack client
+                                    app.client.chat_postEphemeral(
+                                        channel=channel_id,
+                                        user=body.get("user_id"),
+                                        text=f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
                                     )
-                                    
-                                    if response.status_code == 200:
-                                        print("✅ Error response sent successfully")
-                                    else:
-                                        print(f"❌ Error response failed: {response.status_code} - {response.text}")
+                                    print("✅ Error response sent successfully via Slack client")
                                         
                                 except Exception as e:
                                     print(f"❌ Failed to send error response: {e}")
+                                    # Don't fall back - still block the request
                             else:
                                 print("❌ No response_url found in body")
                         
