@@ -322,3 +322,175 @@ def register_member_commands(bolt_app):
             trip, channel_id, 
             f":boot: <@{user}> removed <@{target_user}> from *{car_name}* on *{trip}*."
         )
+    
+    @bolt_app.command("/add")
+    def cmd_add(ack, respond, command):
+        ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
+        user_mention = (command.get("text") or "").strip()
+        
+        # Debug: Log what we received
+        print(f"🔍 /add command received text: '{user_mention}'")
+        print(f"🔍 /add command text length: {len(user_mention)}")
+        print(f"🔍 /add command text repr: {repr(user_mention)}")
+        
+        if not user_mention:
+            return eph(respond, "Usage: `/add @user`")
+        
+        # Extract user ID from mention - handle multiple formats (same logic as /boot)
+        target_user = None
+        
+        # Format 1: Proper Slack mention <@U123456789> or <@U123456789|username>
+        if user_mention.startswith("<@") and user_mention.endswith(">"):
+            mention_content = user_mention[2:-1]
+            if "|" in mention_content:
+                target_user = mention_content.split("|")[0]  # Take only the user ID part
+            else:
+                target_user = mention_content
+            print(f"✅ /add parsed Slack mention format: target_user='{target_user}'")
+        
+        # Format 2: Display name format - try to find user by display name or real name
+        else:
+            # Remove @ if present at the start
+            search_name = user_mention.lstrip('@')
+            print(f"🔍 /add trying to find user by name: '{search_name}'")
+            
+            try:
+                from app import bolt_app
+                # Get channel members to search through
+                channel_members = get_channel_members(channel_id)
+                print(f"🔍 /add found {len(channel_members)} channel members: {channel_members[:5]}...")  # Show first 5 for debugging
+                
+                if not channel_members:
+                    print(f"❌ /add no channel members found - this might be a permissions issue")
+                    return eph(respond, f":x: Could not retrieve channel members. Make sure the bot has proper permissions and is added to this channel.")
+                
+                found_users = []  # Track all users we check for better debugging
+                
+                for member_id in channel_members:
+                    try:
+                        user_info = bolt_app.client.users_info(user=member_id)
+                        user_data = user_info["user"]
+                        
+                        # Skip bots
+                        if user_data.get("is_bot", False):
+                            continue
+                            
+                        # Check various name fields
+                        display_name = user_data.get("display_name", "")
+                        real_name = user_data.get("real_name", "")
+                        name = user_data.get("name", "")
+                        
+                        found_users.append(f"{name}({real_name})")
+                        
+                        # More flexible matching - try multiple approaches
+                        search_lower = search_name.lower()
+                        
+                        # Exact username match
+                        if search_lower == name.lower():
+                            target_user = member_id
+                            print(f"✅ /add found exact username match: '{search_name}' -> {member_id} (@{name})")
+                            break
+                            
+                        # Contains match in real name or display name
+                        if (search_lower in real_name.lower() or 
+                            search_lower in display_name.lower()):
+                            target_user = member_id
+                            print(f"✅ /add found name match: '{search_name}' -> {member_id} ({real_name})")
+                            break
+                            
+                        # Try matching parts of the name (e.g., "rohrbaugh.joshua" matches "rohrbaugh")
+                        name_parts = search_lower.replace('.', ' ').split()
+                        for part in name_parts:
+                            if (part in real_name.lower() or 
+                                part in display_name.lower() or 
+                                part in name.lower()):
+                                target_user = member_id
+                                print(f"✅ /add found partial match: '{part}' in user {member_id} ({real_name})")
+                                break
+                        if target_user:
+                            break
+                            
+                    except Exception as e:
+                        print(f"❌ /add error checking user {member_id}: {e}")
+                        continue
+                
+                print(f"🔍 /add checked users: {found_users[:10]}...")  # Show first 10 users we found
+                        
+            except Exception as e:
+                print(f"❌ /add error searching for user by name: {e}")
+        
+        if not target_user:
+            return eph(respond, f":x: Could not find user '{user_mention}'. Please use @mention to select the user from the dropdown, or make sure they're in this channel.")
+        
+        user = command["user_id"]
+        
+        # Don't allow adding yourself
+        if target_user == user:
+            return eph(respond, ":x: You can't add yourself to your own car.")
+        
+        # Get the active trip for this channel
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Find the user's car in this trip
+            cur.execute(
+                "SELECT id, name, seats FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
+                (channel_id, trip, user)
+            )
+            car_row = cur.fetchone()
+            
+            if not car_row:
+                return eph(respond, f":x: You don't have a car on *{trip}* to add members to.")
+            
+            car_id, car_name, total_seats = car_row
+            
+            # Check if target user is already in ANY car for this trip
+            cur.execute(
+                "SELECT c.name, c.created_by FROM car_members cm JOIN cars c ON cm.car_id = c.id WHERE cm.user_id=%s AND c.trip=%s AND c.channel_id=%s",
+                (target_user, trip, channel_id)
+            )
+            existing_car = cur.fetchone()
+            
+            if existing_car:
+                existing_car_name, existing_car_owner = existing_car
+                return eph(respond, f":x: <@{target_user}> is already in *{existing_car_name}* (owned by <@{existing_car_owner}>) on *{trip}*.")
+            
+            # Check if car has space
+            cur.execute("SELECT COUNT(*) FROM car_members WHERE car_id=%s", (car_id,))
+            current_members = cur.fetchone()[0]
+            
+            if current_members >= total_seats:
+                return eph(respond, f":x: Your car (*{car_name}*) is full ({current_members}/{total_seats} seats). Use `/update` to increase seats or `/boot` to remove someone first.")
+            
+            # Add the user to the car
+            try:
+                cur.execute(
+                    "INSERT INTO car_members(car_id, user_id) VALUES(%s, %s)",
+                    (car_id, target_user)
+                )
+                conn.commit()
+            except psycopg2.errors.UniqueViolation:
+                return eph(respond, f":x: <@{target_user}> is already in your car.")
+        
+        eph(respond, f":white_check_mark: You added <@{target_user}> to your car (*{car_name}*).")
+        bolt_app.client.chat_postMessage(
+            channel=target_user, 
+            text=f":car: You were added to *{car_name}* on *{trip}* by <@{user}>."
+        )
+        post_announce(
+            trip, channel_id, 
+            f":seat: <@{user}> added <@{target_user}> to *{car_name}* on *{trip}*."
+        )

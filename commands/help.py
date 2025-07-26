@@ -26,6 +26,7 @@ def register_help_commands(bolt_app):
             "`/in CarID` – request to join a car\n"
             "`/out` – leave your current car\n"
             "`/update seats` – update your car's seat count\n"
+            "`/add @user` – add a user to your car (if they're not in another car)\n"
             "`/boot @user` – remove a member from your car\n"
             "`/delete` – delete your car\n"
             "`/needride` – users not in any car\n"
