@@ -119,13 +119,24 @@ def run_migration():
         
         print("📋 Step 4: Implementing car ID reuse system...")
         
-        # Check if cars table has manual ID assignment capability
-        try:
-            # Try to insert with manual ID to test if sequence allows it
-            cur.execute("SELECT setval('cars_id_seq', (SELECT MAX(id) FROM cars), true)")
-            print("   → Car ID sequence updated for manual assignment")
-        except Exception as e:
-            print(f"   → Car ID sequence: {e}")
+        # Check if cars_id_seq sequence exists
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_sequences 
+                WHERE sequencename = 'cars_id_seq'
+            )
+        """)
+        sequence_exists = cur.fetchone()[0]
+        
+        if sequence_exists:
+            try:
+                # Update sequence to allow manual ID assignment
+                cur.execute("SELECT setval('cars_id_seq', (SELECT MAX(id) FROM cars), true)")
+                print("   → Car ID sequence updated for manual assignment")
+            except Exception as e:
+                print(f"   → Car ID sequence update failed: {e}")
+        else:
+            print("   → Car ID sequence doesn't exist (table may not use auto-increment)")
         
         print("📋 Step 5: Cleaning up orphaned data...")
         
