@@ -91,21 +91,21 @@ class CodebaseAnalyzer:
     
     def _find_sql_operations(self, content, file_path):
         """Find SQL operations using more precise patterns"""
-        # Look for SQL operations in execute() calls or triple-quoted strings
-        # More precise patterns that look for actual SQL context
+        # Only look for SQL operations in application code, not in management scripts
+        # Focus on actual database operations for the carpool bot functionality
         
-        # Find execute() calls with SQL
-        execute_pattern = r'execute\s*\(\s*["\'\']{1,3}([^"\'\']*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|SELECT.*?FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)[^"\'\']*)["\'\']{1,3}'
+        # Find execute() calls with SQL - but only for core operations
+        execute_pattern = r'execute\s*\(\s*["\'\']{1,3}([^"\'\']*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|SELECT.*?FROM)\s+(?:trips|cars|car_members)[^"\'\']*)["\'\']{1,3}'
         
         matches = re.finditer(execute_pattern, content, re.IGNORECASE | re.DOTALL)
         for match in matches:
             sql_content = match.group(1)
             self._parse_sql_content(sql_content, file_path)
         
-        # Also look for multi-line SQL strings (triple quotes)
-        multiline_sql_pattern = r'["\'\']{3}([^"\'\']*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|SELECT.*?FROM|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)[^"\'\']*)["\'\']{3}'
+        # Also look for CREATE TABLE statements for core tables only
+        create_pattern = r'execute\s*\(\s*["\'\']{1,3}([^"\'\']*CREATE\s+TABLE[^"\'\']*(?:trips|cars|car_members)[^"\'\']*)["\'\']{1,3}'
         
-        matches = re.finditer(multiline_sql_pattern, content, re.IGNORECASE | re.DOTALL)
+        matches = re.finditer(create_pattern, content, re.IGNORECASE | re.DOTALL)
         for match in matches:
             sql_content = match.group(1)
             self._parse_sql_content(sql_content, file_path)

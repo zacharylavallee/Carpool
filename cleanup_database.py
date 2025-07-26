@@ -78,13 +78,29 @@ def cleanup_database():
         
         if extra_tables:
             print(f"⚠️  Found {len(extra_tables)} additional tables:")
+            tables_to_remove = []
+            
             for table in extra_tables:
                 cur.execute(f"SELECT COUNT(*) as count FROM {table}")
                 count = cur.fetchone()['count']
                 print(f"   - {table}: {count} records")
+                
+                # Auto-remove empty tables that look like leftovers
+                if count == 0 and table in ['join_requests', 'trip_settings']:
+                    tables_to_remove.append(table)
             
-            print("\n   These tables are not part of the core carpool bot schema.")
-            print("   Review them manually if you want to remove them.")
+            if tables_to_remove:
+                print(f"\n🗑️  Removing {len(tables_to_remove)} empty leftover tables...")
+                for table in tables_to_remove:
+                    cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+                    print(f"   ✅ {table} table removed")
+            
+            remaining_extra = extra_tables - set(tables_to_remove)
+            if remaining_extra:
+                print(f"\n   {len(remaining_extra)} additional tables remain:")
+                for table in remaining_extra:
+                    print(f"   - {table}")
+                print("   Review these manually if you want to remove them.")
         else:
             print("✅ No extra tables found")
         
