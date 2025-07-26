@@ -32,11 +32,25 @@ def register_channel_restrictions(bolt_app):
             
             if channel_id.startswith("C"):
                 # This is a public channel - block it
-                # For slash commands, we need to provide a proper response
+                # For slash commands, provide an error response
                 if body.get("type") == "slash_command":
-                    from utils.ephemeral import eph
-                    # This will be handled by the command handler's respond function
-                    pass
+                    # We need to respond immediately to prevent the command from proceeding
+                    import json
+                    import urllib3
+                    
+                    response_url = body.get("response_url")
+                    if response_url:
+                        http = urllib3.PoolManager()
+                        error_response = {
+                            "response_type": "ephemeral",
+                            "text": ":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel."
+                        }
+                        http.request(
+                            'POST',
+                            response_url,
+                            body=json.dumps(error_response),
+                            headers={'Content-Type': 'application/json'}
+                        )
                 return
         
         # Allow private channels, DMs, and any other cases

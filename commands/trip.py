@@ -197,23 +197,25 @@ def register_trip_commands(bolt_app):
         with get_conn() as conn:
             cur = conn.cursor()
             
-            # Check if trip exists and user is the creator
+            # Check if trip exists globally and user is the creator (since trip names are globally unique)
             cur.execute(
-                "SELECT created_by FROM trips WHERE channel_id=%s AND name=%s",
-                (channel_id, trip_name)
+                "SELECT created_by, channel_id FROM trips WHERE name=%s",
+                (trip_name,)
             )
             row = cur.fetchone()
             
             if not row:
-                return eph(respond, f":x: Trip '*{trip_name}*' does not exist in this channel.")
+                return eph(respond, f":x: Trip '*{trip_name}*' does not exist.")
             
-            if row[0] != user:
+            trip_creator, trip_channel_id = row
+            
+            if trip_creator != user:
                 return eph(respond, f":x: Only the trip creator can delete '*{trip_name}*'.")
             
             # Check if there are any cars on this trip
             cur.execute(
-                "SELECT COUNT(*) FROM cars WHERE channel_id=%s AND trip=%s",
-                (channel_id, trip_name)
+                "SELECT COUNT(*) FROM cars WHERE trip=%s",
+                (trip_name,)
             )
             car_count = cur.fetchone()[0]
             
@@ -239,7 +241,7 @@ def register_trip_commands(bolt_app):
                             "text": {"type": "plain_text", "text": "Yes, Delete Trip"},
                             "style": "danger",
                             "action_id": "confirm_delete_trip",
-                            "value": f"{channel_id}:{trip_name}"
+                            "value": f"{trip_name}"
                         },
                         {
                             "type": "button",
@@ -255,16 +257,16 @@ def register_trip_commands(bolt_app):
     @bolt_app.action("confirm_delete_trip")
     def handle_confirm_delete_trip(ack, body, client):
         ack()
-        channel_id, trip_name = body["actions"][0]["value"].split(":")
+        trip_name = body["actions"][0]["value"]
         user = body["user"]["id"]
         
         with get_conn() as conn:
             cur = conn.cursor()
             
-            # Verify the user still owns this trip and it still exists
+            # Verify the user still owns this trip and it still exists (global lookup)
             cur.execute(
-                "SELECT created_by FROM trips WHERE channel_id=%s AND name=%s",
-                (channel_id, trip_name)
+                "SELECT created_by, channel_id FROM trips WHERE name=%s",
+                (trip_name,)
             )
             row = cur.fetchone()
             
@@ -277,10 +279,12 @@ def register_trip_commands(bolt_app):
                 )
                 return
             
+            trip_creator, trip_channel_id = row
+            
             # Double-check no cars exist (race condition protection)
             cur.execute(
-                "SELECT COUNT(*) FROM cars WHERE channel_id=%s AND trip=%s",
-                (channel_id, trip_name)
+                "SELECT COUNT(*) FROM cars WHERE trip=%s",
+                (trip_name,)
             )
             car_count = cur.fetchone()[0]
             
@@ -295,8 +299,8 @@ def register_trip_commands(bolt_app):
             
             # Delete the trip
             cur.execute(
-                "DELETE FROM trips WHERE channel_id=%s AND name=%s",
-                (channel_id, trip_name)
+                "DELETE FROM trips WHERE name=%s",
+                (trip_name,)
             )
             conn.commit()
         
