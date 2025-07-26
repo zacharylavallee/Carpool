@@ -187,7 +187,13 @@ def register_member_commands(bolt_app):
         # Extract user ID from mention
         if not user_mention.startswith("<@") or not user_mention.endswith(">"):
             return eph(respond, ":x: Please mention a user like @username")
-        target_user = user_mention[2:-1]  # Remove <@ and >
+        
+        # Remove <@ and >, then handle both formats: <@U123> and <@U123|username>
+        mention_content = user_mention[2:-1]
+        if "|" in mention_content:
+            target_user = mention_content.split("|")[0]  # Take only the user ID part
+        else:
+            target_user = mention_content
         
         user = command["user_id"]
         
