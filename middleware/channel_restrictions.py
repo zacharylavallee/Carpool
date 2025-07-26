@@ -28,45 +28,69 @@ def register_channel_restrictions(bolt_app):
             return
         
         if channel_id:
-            # Channel ID patterns:
-            # C* = Public channels (block these)
-            # G* = Private channels (allow)
-            # D* = Direct messages (allow)
-            # U* = User IDs in DMs (allow)
-            
-            if channel_id.startswith("C"):
-                print(f"❌ Blocking public channel: {channel_id}")
-                # This is a public channel - block it
-                # For slash commands, provide an error response
-                if body.get("type") == "slash_command":
-                    print("📤 Sending error response for blocked slash command")
-                    # We need to respond immediately to prevent the command from proceeding
-                    import json
-                    import urllib3
+            # Use Slack API to check if channel is public or private
+            try:
+                from app import bolt_app as app
+                
+                # Try to get channel info using the Slack API
+                channel_info = app.client.conversations_info(channel=channel_id)
+                
+                if channel_info["ok"]:
+                    channel = channel_info["channel"]
+                    is_private = channel.get("is_private", False)
+                    is_im = channel.get("is_im", False)  # Direct message
+                    is_mpim = channel.get("is_mpim", False)  # Multi-person DM
+                    channel_name = channel.get("name", "unknown")
                     
-                    response_url = body.get("response_url")
-                    if response_url:
-                        http = urllib3.PoolManager()
-                        error_response = {
-                            "response_type": "ephemeral",
-                            "text": ":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel."
-                        }
-                        try:
-                            http.request(
-                                'POST',
-                                response_url,
-                                body=json.dumps(error_response),
-                                headers={'Content-Type': 'application/json'}
-                            )
-                            print("✅ Error response sent successfully")
-                        except Exception as e:
-                            print(f"❌ Failed to send error response: {e}")
+                    print(f"📊 Channel info: name='{channel_name}', is_private={is_private}, is_im={is_im}, is_mpim={is_mpim}")
+                    
+                    # Allow private channels, DMs, and multi-person DMs
+                    if is_private or is_im or is_mpim:
+                        print(f"✅ Allowing private channel/DM: {channel_name}")
+                        next()
+                        return
                     else:
-                        print("❌ No response_url found in body")
-                # Don't call next() - this blocks the request
-                return
-            else:
-                print(f"✅ Allowing private channel/DM: {channel_id}")
+                        # This is a public channel - block it
+                        print(f"❌ Blocking public channel: {channel_name}")
+                        
+                        # For slash commands, provide an error response
+                        if body.get("type") == "slash_command":
+                            print("📤 Sending error response for blocked slash command")
+                            import json
+                            import urllib3
+                            
+                            response_url = body.get("response_url")
+                            if response_url:
+                                http = urllib3.PoolManager()
+                                error_response = {
+                                    "response_type": "ephemeral",
+                                    "text": f":x: This bot only works in private channels and DMs to prevent notification spam. Please use this command in a private channel instead of #{channel_name}."
+                                }
+                                try:
+                                    http.request(
+                                        'POST',
+                                        response_url,
+                                        body=json.dumps(error_response),
+                                        headers={'Content-Type': 'application/json'}
+                                    )
+                                    print("✅ Error response sent successfully")
+                                except Exception as e:
+                                    print(f"❌ Failed to send error response: {e}")
+                            else:
+                                print("❌ No response_url found in body")
+                        
+                        # Don't call next() - this blocks the request
+                        return
+                else:
+                    print(f"❌ Failed to get channel info: {channel_info.get('error', 'unknown error')}")
+                    # If we can't get channel info, fall back to allowing the request
+                    # (better to be permissive than to break functionality)
+                    print("⚠️ Falling back to allowing request due to API error")
+                    
+            except Exception as e:
+                print(f"❌ Exception getting channel info: {e}")
+                # If there's an exception, fall back to allowing the request
+                print("⚠️ Falling back to allowing request due to exception")
         else:
             print("⚠️ No channel_id found, allowing request")
         
