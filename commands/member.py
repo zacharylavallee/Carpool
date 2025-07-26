@@ -55,6 +55,13 @@ def register_member_commands(bolt_app):
             text=f":wave: <@{user}> wants to join your car `{car_id}` (*{car_name}*) on *{trip}*.",
             blocks=[
                 {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":wave: *<@{user}> wants to join your car `{car_id}`*\n:car: Car: *{car_name}*\n:round_pushpin: Trip: *{trip}*"
+                    }
+                },
+                {
                     "type": "actions",
                     "elements": [
                         {
