@@ -19,24 +19,125 @@ def register_member_commands(bolt_app):
         if not check_bot_channel_access(channel_id, respond):
             return
         
-        car_id_str = (command.get("text") or "").strip()
-        if not car_id_str:
-            return eph(respond, "Usage: `/in CarID`")
-        try:
-            car_id = int(car_id_str)
-        except ValueError:
-            return eph(respond, ":x: CarID must be a number.")
+        user_mention = (command.get("text") or "").strip()
+        
+        # Debug: Log what we received
+        print(f"🔍 /in command received text: '{user_mention}'")
+        print(f"🔍 /in command text length: {len(user_mention)}")
+        print(f"🔍 /in command text repr: {repr(user_mention)}")
+        
+        if not user_mention:
+            return eph(respond, "Usage: `/in @car_owner` (mention the owner of the car you want to join)")
+        
+        # Extract user ID from mention - handle multiple formats (same logic as /add and /boot)
+        target_car_owner = None
+        
+        # Format 1: Proper Slack mention <@U123456789> or <@U123456789|username>
+        if user_mention.startswith("<@") and user_mention.endswith(">"):
+            mention_content = user_mention[2:-1]
+            if "|" in mention_content:
+                target_car_owner = mention_content.split("|")[0]  # Take only the user ID part
+            else:
+                target_car_owner = mention_content
+            print(f"✅ /in parsed Slack mention format: target_car_owner='{target_car_owner}'")
+        
+        # Format 2: Display name format - try to find user by display name or real name
+        else:
+            # Remove @ if present at the start
+            search_name = user_mention.lstrip('@')
+            print(f"🔍 /in trying to find user by name: '{search_name}'")
+            
+            try:
+                from app import bolt_app
+                # Get channel members to search through
+                channel_members = get_channel_members(channel_id)
+                print(f"🔍 /in found {len(channel_members)} channel members: {channel_members[:5]}...")  # Show first 5 for debugging
+                
+                if not channel_members:
+                    print(f"❌ /in no channel members found - this might be a permissions issue")
+                    return eph(respond, f":x: Could not retrieve channel members. Make sure the bot has proper permissions and is added to this channel.")
+                
+                for member_id in channel_members:
+                    try:
+                        user_info = bolt_app.client.users_info(user=member_id)
+                        user_data = user_info["user"]
+                        
+                        # Skip bots
+                        if user_data.get("is_bot", False):
+                            continue
+                            
+                        # Check various name fields
+                        display_name = user_data.get("display_name", "")
+                        real_name = user_data.get("real_name", "")
+                        name = user_data.get("name", "")
+                        
+                        # More flexible matching
+                        search_lower = search_name.lower()
+                        
+                        # Exact username match
+                        if search_lower == name.lower():
+                            target_car_owner = member_id
+                            print(f"✅ /in found exact username match: '{search_name}' -> {member_id} (@{name})")
+                            break
+                            
+                        # Contains match in real name or display name
+                        if (search_lower in real_name.lower() or 
+                            search_lower in display_name.lower()):
+                            target_car_owner = member_id
+                            print(f"✅ /in found name match: '{search_name}' -> {member_id} ({real_name})")
+                            break
+                            
+                        # Try matching parts of the name
+                        name_parts = search_lower.replace('.', ' ').split()
+                        for part in name_parts:
+                            if (part in real_name.lower() or 
+                                part in display_name.lower() or 
+                                part in name.lower()):
+                                target_car_owner = member_id
+                                print(f"✅ /in found partial match: '{part}' in user {member_id} ({real_name})")
+                                break
+                        if target_car_owner:
+                            break
+                            
+                    except Exception as e:
+                        print(f"❌ /in error checking user {member_id}: {e}")
+                        continue
+                        
+            except Exception as e:
+                print(f"❌ /in error searching for user by name: {e}")
+        
+        if not target_car_owner:
+            return eph(respond, f":x: Could not find user '{user_mention}'. Please use @mention to select the car owner from the dropdown, or make sure they're in this channel.")
+        
         user = command["user_id"]
         
+        # Don't allow joining your own car
+        if target_car_owner == user:
+            return eph(respond, ":x: You can't request to join your own car.")
+        
+        # Get the active trip for this channel
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT created_by, name, trip FROM cars WHERE id=%s", (car_id,))
-            row = cur.fetchone()
-        if not row:
-            return eph(respond, f":x: Car `{car_id}` does not exist.")
-        creator, car_name, trip = row
-        if creator == user:
-            return eph(respond, ":x: You can't request to join your own car.")
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Find the car owned by the target user in this trip
+            cur.execute(
+                "SELECT id, name FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
+                (channel_id, trip, target_car_owner)
+            )
+            car_row = cur.fetchone()
+            
+            if not car_row:
+                return eph(respond, f":x: <@{target_car_owner}> doesn't have a car on *{trip}* that you can join.")
+            
+            car_id, car_name = car_row
+            creator = target_car_owner
         
         with get_conn() as conn:
             cur = conn.cursor()

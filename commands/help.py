@@ -23,7 +23,7 @@ def register_help_commands(bolt_app):
             "`/car seats` – create & join car (auto-named)\n"
             "`/list` – list cars on the active trip\n"
             "`/info` – show all trips & car details\n"
-            "`/in CarID` – request to join a car\n"
+            "`/in @car_owner` – request to join someone's car\n"
             "`/out` – leave your current car\n"
             "`/update seats` – update your car's seat count\n"
             "`/add @user1 @user2` – add users to your car\n"
