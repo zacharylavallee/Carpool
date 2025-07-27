@@ -427,6 +427,8 @@ def register_member_commands(bolt_app):
                     print(f"❌ /boot no channel members found - this might be a permissions issue")
                     return eph(respond, f":x: Could not retrieve channel members. Make sure the bot has proper permissions and is added to this channel.")
                 
+                # Collect potential matches with priority scoring
+                potential_matches = []
                 found_users = []  # Track all users we check for better debugging
                 
                 for member_id in channel_members:
@@ -444,39 +446,70 @@ def register_member_commands(bolt_app):
                         name = user_data.get("name", "")
                         
                         found_users.append(f"{name}({real_name})")
-                        
-                        # More flexible matching - try multiple approaches
                         search_lower = search_name.lower()
                         
-                        # Exact username match
+                        # Priority 1: Exact username match (highest priority)
                         if search_lower == name.lower():
-                            target_user = member_id
-                            print(f"✅ /boot found exact username match: '{search_name}' -> {member_id} (@{name})")
-                            break
+                            potential_matches.append((member_id, 1, f"exact username: @{name}"))
+                            continue
                             
-                        # Contains match in real name or display name
-                        if (search_lower in real_name.lower() or 
-                            search_lower in display_name.lower()):
-                            target_user = member_id
-                            print(f"✅ /boot found name match: '{search_name}' -> {member_id} ({real_name})")
-                            break
+                        # Priority 2: Exact match in display name or real name
+                        if (search_lower == display_name.lower() or 
+                            search_lower == real_name.lower()):
+                            potential_matches.append((member_id, 2, f"exact name: {real_name}"))
+                            continue
                             
-                        # Try matching parts of the name (e.g., "rohrbaugh.joshua" matches "rohrbaugh")
-                        name_parts = search_lower.replace('.', ' ').split()
-                        for part in name_parts:
-                            if (part in real_name.lower() or 
-                                part in display_name.lower() or 
-                                part in name.lower()):
-                                target_user = member_id
-                                print(f"✅ /boot found partial match: '{part}' in user {member_id} ({real_name})")
-                                break
-                        if target_user:
-                            break
+                        # Priority 3: Username starts with search term (more restrictive)
+                        if name.lower().startswith(search_lower):
+                            potential_matches.append((member_id, 3, f"username starts with: @{name}"))
+                            continue
+                            
+                        # Priority 4: Real name or display name starts with search term
+                        if (real_name.lower().startswith(search_lower) or 
+                            display_name.lower().startswith(search_lower)):
+                            potential_matches.append((member_id, 4, f"name starts with: {real_name}"))
+                            continue
+                            
+                        # Priority 5: Contains match (but only if search term is reasonably long to avoid false positives)
+                        if len(search_lower) >= 4:  # Only do contains matching for longer search terms
+                            if (search_lower in real_name.lower() or 
+                                search_lower in display_name.lower()):
+                                potential_matches.append((member_id, 5, f"name contains: {real_name}"))
+                                continue
+                            
+                        # Priority 6: Partial word matching (most restrictive)
+                        if len(search_lower) >= 3:  # Only for reasonably long search terms
+                            name_parts = search_lower.replace('.', ' ').split()
+                            for part in name_parts:
+                                if len(part) >= 3:  # Only match parts that are at least 3 characters
+                                    # Look for whole word matches, not just substrings
+                                    real_name_words = real_name.lower().split()
+                                    display_name_words = display_name.lower().split()
+                                    username_parts = name.lower().replace('.', ' ').replace('_', ' ').split()
+                                    
+                                    if (part in real_name_words or 
+                                        part in display_name_words or 
+                                        part in username_parts):
+                                        potential_matches.append((member_id, 6, f"partial word match '{part}': {real_name}"))
+                                        break
                             
                     except Exception as e:
                         print(f"❌ /boot error checking user {member_id}: {e}")
                         continue
                 
+                # Select the best match (lowest priority number = highest priority)
+                if potential_matches:
+                    # Sort by priority (lower number = higher priority)
+                    potential_matches.sort(key=lambda x: x[1])
+                    target_user, priority, match_reason = potential_matches[0]
+                    print(f"✅ /boot selected best match: '{search_name}' -> {target_user} ({match_reason})")
+                    
+                    # If we have multiple matches with the same priority, warn about ambiguity
+                    if len(potential_matches) > 1 and potential_matches[0][1] == potential_matches[1][1]:
+                        print(f"⚠️ /boot found multiple matches with same priority for '{search_name}' - using first match")
+                else:
+                    target_user = None
+                    
                 print(f"🔍 /boot checked users: {found_users[:10]}...")  # Show first 10 users we found
                         
             except Exception as e:
@@ -486,6 +519,10 @@ def register_member_commands(bolt_app):
             return eph(respond, f":x: Could not find user '{user_mention}'. Please use @mention to select the user from the dropdown, or make sure they're in this channel.")
         
         user = command["user_id"]
+        
+        # Prevent users from booting themselves
+        if target_user == user:
+            return eph(respond, ":x: You cannot boot yourself from your own car. Use `/out` to leave your car instead.")
         
         # Get the active trip for this channel
         with get_conn() as conn:
@@ -565,13 +602,16 @@ def register_member_commands(bolt_app):
         print(f"🔍 /add found {len(text_mentions)} text mentions: {text_mentions}")
         
         def find_user_by_name(search_name):
-            """Helper function to find a user by display name or username"""
+            """Helper function to find a user by display name or username using priority-based matching"""
             try:
                 from app import bolt_app
                 channel_members = get_channel_members(channel_id)
                 
                 if not channel_members:
                     return None
+                
+                # Collect potential matches with priority scoring
+                potential_matches = []
                 
                 for member_id in channel_members:
                     try:
@@ -587,32 +627,71 @@ def register_member_commands(bolt_app):
                         real_name = user_data.get("real_name", "")
                         name = user_data.get("name", "")
                         
-                        # More flexible matching
                         search_lower = search_name.lower()
                         
-                        # Exact username match
+                        # Priority 1: Exact username match (highest priority)
                         if search_lower == name.lower():
-                            print(f"✅ /add found exact username match: '{search_name}' -> {member_id} (@{name})")
-                            return member_id
+                            potential_matches.append((member_id, 1, f"exact username: @{name}"))
+                            continue
                             
-                        # Contains match in real name or display name
-                        if (search_lower in real_name.lower() or 
-                            search_lower in display_name.lower()):
-                            print(f"✅ /add found name match: '{search_name}' -> {member_id} ({real_name})")
-                            return member_id
+                        # Priority 2: Exact match in display name or real name
+                        if (search_lower == display_name.lower() or 
+                            search_lower == real_name.lower()):
+                            potential_matches.append((member_id, 2, f"exact name: {real_name}"))
+                            continue
                             
-                        # Try matching parts of the name
-                        name_parts = search_lower.replace('.', ' ').split()
-                        for part in name_parts:
-                            if (part in real_name.lower() or 
-                                part in display_name.lower() or 
-                                part in name.lower()):
-                                print(f"✅ /add found partial match: '{part}' in user {member_id} ({real_name})")
-                                return member_id
+                        # Priority 3: Username starts with search term (more restrictive)
+                        if name.lower().startswith(search_lower):
+                            potential_matches.append((member_id, 3, f"username starts with: @{name}"))
+                            continue
+                            
+                        # Priority 4: Real name or display name starts with search term
+                        if (real_name.lower().startswith(search_lower) or 
+                            display_name.lower().startswith(search_lower)):
+                            potential_matches.append((member_id, 4, f"name starts with: {real_name}"))
+                            continue
+                            
+                        # Priority 5: Contains match (but only if search term is reasonably long to avoid false positives)
+                        if len(search_lower) >= 4:  # Only do contains matching for longer search terms
+                            if (search_lower in real_name.lower() or 
+                                search_lower in display_name.lower()):
+                                potential_matches.append((member_id, 5, f"name contains: {real_name}"))
+                                continue
+                            
+                        # Priority 6: Partial word matching (most restrictive)
+                        if len(search_lower) >= 3:  # Only for reasonably long search terms
+                            name_parts = search_lower.replace('.', ' ').split()
+                            for part in name_parts:
+                                if len(part) >= 3:  # Only match parts that are at least 3 characters
+                                    # Look for whole word matches, not just substrings
+                                    real_name_words = real_name.lower().split()
+                                    display_name_words = display_name.lower().split()
+                                    username_parts = name.lower().replace('.', ' ').replace('_', ' ').split()
+                                    
+                                    if (part in real_name_words or 
+                                        part in display_name_words or 
+                                        part in username_parts):
+                                        potential_matches.append((member_id, 6, f"partial word match '{part}': {real_name}"))
+                                        break
                                 
                     except Exception as e:
                         print(f"❌ /add error checking user {member_id}: {e}")
                         continue
+                
+                # Select the best match (lowest priority number = highest priority)
+                if potential_matches:
+                    # Sort by priority (lower number = higher priority)
+                    potential_matches.sort(key=lambda x: x[1])
+                    target_user, priority, match_reason = potential_matches[0]
+                    print(f"✅ /add selected best match: '{search_name}' -> {target_user} ({match_reason})")
+                    
+                    # If we have multiple matches with the same priority, warn about ambiguity
+                    if len(potential_matches) > 1 and potential_matches[0][1] == potential_matches[1][1]:
+                        print(f"⚠️ /add found multiple matches with same priority for '{search_name}' - using first match")
+                    
+                    return target_user
+                else:
+                    return None
                         
             except Exception as e:
                 print(f"❌ /add error searching for user by name: {e}")
