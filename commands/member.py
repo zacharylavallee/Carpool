@@ -194,13 +194,86 @@ def register_member_commands(bolt_app):
         
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT trip FROM cars WHERE id=%s", (car_id,))
-            trip = cur.fetchone()[0]
+            
+            # Get car and trip info
+            cur.execute("SELECT trip, name, created_by FROM cars WHERE id=%s", (car_id,))
+            car_row = cur.fetchone()
+            if not car_row:
+                client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":x: Error: Car `{car_id}` no longer exists.", blocks=[])
+                return
+            
+            trip, car_name, car_owner = car_row
+            
+            # CRITICAL BUG FIX: Check if user is already in ANY car for this trip
+            cur.execute(
+                "SELECT c.name, c.created_by FROM car_members cm JOIN cars c ON cm.car_id = c.id WHERE cm.user_id=%s AND c.trip=%s AND c.channel_id=%s",
+                (user_to_add, trip, channel_id)
+            )
+            existing_car = cur.fetchone()
+            
+            if existing_car:
+                existing_car_name, existing_car_owner = existing_car
+                # Remove the join request since it's no longer valid
+                cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
+                conn.commit()
+                
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=f":x: Cannot approve <@{user_to_add}> - they're already in *{existing_car_name}* (owned by <@{existing_car_owner}>).", 
+                    blocks=[]
+                )
+                client.chat_postMessage(
+                    channel=user_to_add, 
+                    text=f":x: Your request for *{car_name}* was denied because you're already in *{existing_car_name}* on *{trip}*. Use `/out` to leave your current car first."
+                )
+                return
+            
+            # Check if user is already in THIS car (shouldn't happen, but safety check)
+            cur.execute("SELECT 1 FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
+            if cur.fetchone():
+                # Remove the join request since it's no longer valid
+                cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
+                conn.commit()
+                
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=f":white_check_mark: <@{user_to_add}> is already in car `{car_id}`.", 
+                    blocks=[]
+                )
+                return
+            
+            # Check if car has space
+            cur.execute("SELECT seats FROM cars WHERE id=%s", (car_id,))
+            total_seats = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM car_members WHERE car_id=%s", (car_id,))
+            current_members = cur.fetchone()[0]
+            
+            if current_members >= total_seats:
+                # Remove the join request since car is full
+                cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
+                conn.commit()
+                
+                client.chat_update(
+                    channel=body["channel"]["id"], 
+                    ts=body["container"]["message_ts"], 
+                    text=f":x: Cannot approve <@{user_to_add}> - car `{car_id}` is full ({current_members}/{total_seats} seats).", 
+                    blocks=[]
+                )
+                client.chat_postMessage(
+                    channel=user_to_add, 
+                    text=f":x: Your request for *{car_name}* was denied because the car is now full ({current_members}/{total_seats} seats)."
+                )
+                return
+            
+            # All checks passed - add user to car
             cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
             cur.execute("INSERT INTO car_members(car_id, user_id) VALUES(%s,%s)", (car_id, user_to_add))
             conn.commit()
+            
         client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":white_check_mark: Approved <@{user_to_add}> for car `{car_id}`.", blocks=[])
-        client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You were approved for car `{car_id}`.")
+        client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You were approved for *{car_name}* on *{trip}*!")
         post_announce(trip, channel_id, f":seat: <@{user_to_add}> joined car `{car_id}` on *{trip}*.")
 
     @bolt_app.action("deny_request")
