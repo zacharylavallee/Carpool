@@ -107,6 +107,6 @@ if __name__ == "__main__":
 # Debug registered listeners
 print("\n🔍 REGISTERED LISTENERS:")
 print("======================")
-for listener in bolt_app.listeners:
+for listener in bolt_app._listeners:
     print(f"- {listener}")
 print("======================\n")
