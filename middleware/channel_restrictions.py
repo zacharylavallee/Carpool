@@ -78,7 +78,7 @@ def register_channel_restrictions(bolt_app):
                                     
                                     error_response = {
                                         "response_type": "ephemeral",
-                                        "text": "This bot is intented to be used in private channels only to limit spam notifications."
+                                        "text": "This bot is restricted to specific channels configured by your administrator. If you need access in this channel, please reach out to Zachary Lavallee."
                                     }
                                     
                                     data = json.dumps(error_response).encode('utf-8')
@@ -118,7 +118,7 @@ def register_channel_restrictions(bolt_app):
                             
                             error_response = {
                                 "response_type": "ephemeral",
-                                "text": "This bot is intented to be used in private channels only to limit spam notifications."
+                                "text": "This bot is restricted to specific channels configured by your administrator. If you need access in this channel, please reach out to Zachary Lavallee."
                             }
                             
                             data = json.dumps(error_response).encode('utf-8')
@@ -148,7 +148,7 @@ def register_channel_restrictions(bolt_app):
                         
                         error_response = {
                             "response_type": "ephemeral",
-                            "text": "This bot is intented to be used in private channels only to limit spam notifications."
+                            "text": "This bot is restricted to specific channels configured by your administrator. If you need access in this channel, please reach out to Zachary Lavallee."
                         }
                         
                         data = json.dumps(error_response).encode('utf-8')
