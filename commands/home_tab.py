@@ -226,7 +226,50 @@ def register_home_tab_handlers(bolt_app):
             
             elif action_type == "add":
                 print(f"🔍 DEBUG: Add action triggered for car {car_id}")
-                # Show simple text input modal that calls existing /add command logic
+                
+                # Get available users for this car
+                available_users = get_available_channel_members(car_id)
+                print(f"🔍 DEBUG: Available users for car {car_id}: {available_users}")
+                
+                if not available_users:
+                    # No users available to add
+                    client.views_open(
+                        trigger_id=body["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Add Someone"
+                            },
+                            "blocks": [
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": "⚠️ *No users available to add*\n\nAll channel members are either already in cars or there are no other members in this channel."
+                                    }
+                                }
+                            ],
+                            "close": {
+                                "type": "plain_text",
+                                "text": "Close"
+                            }
+                        }
+                    )
+                    return
+                
+                # Create user options for multi-select
+                user_options = []
+                for user_id, username in available_users:
+                    user_options.append({
+                        "text": {
+                            "type": "plain_text",
+                            "text": username
+                        },
+                        "value": user_id
+                    })
+                
+                # Show multi-select modal with filtered users
                 client.views_open(
                     trigger_id=body["trigger_id"],
                     view={
@@ -243,30 +286,84 @@ def register_home_tab_handlers(bolt_app):
                             "type": "plain_text",
                             "text": "Cancel"
                         },
-                        "callback_id": f"simple_add_{car_id}",
+                        "callback_id": f"filtered_add_{car_id}",
                         "blocks": [
                             {
                                 "type": "input",
-                                "block_id": "user_input",
+                                "block_id": "user_selection",
                                 "element": {
-                                    "type": "plain_text_input",
-                                    "action_id": "user_names",
+                                    "type": "multi_static_select",
+                                    "action_id": "selected_users",
                                     "placeholder": {
                                         "type": "plain_text",
-                                        "text": "Enter usernames or @mentions (e.g., @john @sarah)"
-                                    }
+                                        "text": "Select users to add..."
+                                    },
+                                    "options": user_options
                                 },
                                 "label": {
                                     "type": "plain_text",
                                     "text": "Who do you want to add?"
                                 }
+                            },
+                            {
+                                "type": "context",
+                                "elements": [
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"📝 _Showing {len(available_users)} available users from this channel who are not already in cars._"
+                                    }
+                                ]
                             }
                         ]
                     }
                 )
             
             elif action_type == "boot":
-                # Show simple text input modal for boot (like add)
+                print(f"🔍 DEBUG: Boot action triggered for car {car_id}")
+                
+                # Get current car members for boot (excluding owner)
+                car_members = get_car_members_for_boot(car_id, user_id)
+                print(f"🔍 DEBUG: Car members for boot from car {car_id}: {car_members}")
+                
+                if not car_members:
+                    # No users available to boot
+                    client.views_open(
+                        trigger_id=body["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Boot Someone"
+                            },
+                            "blocks": [
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": "⚠️ *No users available to remove*\n\nThis car either has no passengers or you can only remove passengers (not the owner)."
+                                    }
+                                }
+                            ],
+                            "close": {
+                                "type": "plain_text",
+                                "text": "Close"
+                            }
+                        }
+                    )
+                    return
+                
+                # Create user options for multi-select
+                user_options = []
+                for user_id_member, username in car_members:
+                    user_options.append({
+                        "text": {
+                            "type": "plain_text",
+                            "text": username
+                        },
+                        "value": user_id_member
+                    })
+                
+                # Show multi-select modal with current car members
                 client.views_open(
                     trigger_id=body["trigger_id"],
                     view={
@@ -283,23 +380,33 @@ def register_home_tab_handlers(bolt_app):
                             "type": "plain_text",
                             "text": "Cancel"
                         },
-                        "callback_id": f"simple_boot_{car_id}",
+                        "callback_id": f"filtered_boot_{car_id}",
                         "blocks": [
                             {
                                 "type": "input",
-                                "block_id": "user_input",
+                                "block_id": "user_selection",
                                 "element": {
-                                    "type": "plain_text_input",
-                                    "action_id": "user_names",
+                                    "type": "multi_static_select",
+                                    "action_id": "selected_users",
                                     "placeholder": {
                                         "type": "plain_text",
-                                        "text": "Enter usernames or @mentions (e.g., @john @sarah)"
-                                    }
+                                        "text": "Select users to remove..."
+                                    },
+                                    "options": user_options
                                 },
                                 "label": {
                                     "type": "plain_text",
                                     "text": "Who do you want to remove?"
                                 }
+                            },
+                            {
+                                "type": "context",
+                                "elements": [
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"📝 _Showing {len(car_members)} passengers currently in this car._"
+                                    }
+                                ]
                             }
                         ]
                     }
@@ -401,6 +508,192 @@ def register_home_tab_handlers(bolt_app):
             
         except Exception as e:
             print(f"Error handling legacy manage car button: {e}")
+    
+    @bolt_app.view(re.compile(r"filtered_add_\d+"))
+    def handle_filtered_add_submission(ack, body, client):
+        """Handle filtered add modal submission with multi-select user list"""
+        ack()
+        print(f"🔍 DEBUG: Filtered add modal submitted - callback_id: {body['view']['callback_id']}")
+        
+        # Extract car ID from callback_id
+        callback_id = body["view"]["callback_id"]
+        car_id = callback_id.replace("filtered_add_", "")
+        user_id = body["user"]["id"]
+        
+        # Get the selected users
+        try:
+            selected_options = body["view"]["state"]["values"]["user_selection"]["selected_users"]["selected_options"]
+            
+            if not selected_options:
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text="❌ Please select at least one user to add."
+                )
+                return
+            
+            # Get car info to find the channel
+            with get_conn() as conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                cur.execute("SELECT channel_id FROM cars WHERE id = %s", (car_id,))
+                car_info = cur.fetchone()
+                
+                if not car_info:
+                    client.chat_postEphemeral(
+                        channel=user_id,
+                        user=user_id,
+                        text="❌ Car not found. Please try again."
+                    )
+                    return
+                
+                channel_id = car_info['channel_id']
+            
+            # Convert selected user IDs to mentions for the command
+            user_mentions = []
+            for option in selected_options:
+                user_mentions.append(f"<@{option['value']}>")
+            
+            user_input = " ".join(user_mentions)
+            
+            # Import and call the existing /add command logic
+            from commands.member import cmd_add
+            
+            # Create a mock command object like slash commands use
+            class MockCommand:
+                def __init__(self, text, user_id, channel_id):
+                    self.data = {
+                        "text": text,
+                        "user_id": user_id,
+                        "channel_id": channel_id
+                    }
+                
+                def get(self, key):
+                    return self.data.get(key)
+                
+                def __getitem__(self, key):
+                    return self.data[key]
+            
+            # Create a mock respond function that sends ephemeral messages
+            def mock_respond(text):
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text=text
+                )
+            
+            # Format the command text to include the car_id
+            command_text = f"{car_id} {user_input}"
+            print(f"🔍 DEBUG: Calling cmd_add with text: {command_text}")
+            
+            # Create the mock command
+            mock_command = MockCommand(command_text, user_id, channel_id)
+            
+            # Execute the add command directly
+            cmd_add(lambda: None, mock_respond, mock_command)
+            
+            # Refresh the Home Tab
+            update_home_tab_for_user(user_id)
+            
+        except Exception as e:
+            print(f"Error processing filtered add submission: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=f"❌ Error processing your request: {str(e)}"
+            )
+    
+    @bolt_app.view(re.compile(r"filtered_boot_\d+"))
+    def handle_filtered_boot_submission(ack, body, client):
+        """Handle filtered boot modal submission with multi-select user list"""
+        ack()
+        print(f"🔍 DEBUG: Filtered boot modal submitted - callback_id: {body['view']['callback_id']}")
+        
+        # Extract car ID from callback_id
+        callback_id = body["view"]["callback_id"]
+        car_id = callback_id.replace("filtered_boot_", "")
+        user_id = body["user"]["id"]
+        
+        # Get the selected users
+        try:
+            selected_options = body["view"]["state"]["values"]["user_selection"]["selected_users"]["selected_options"]
+            
+            if not selected_options:
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text="❌ Please select at least one user to remove."
+                )
+                return
+            
+            # Get car info to find the channel
+            with get_conn() as conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                cur.execute("SELECT channel_id FROM cars WHERE id = %s", (car_id,))
+                car_info = cur.fetchone()
+                
+                if not car_info:
+                    client.chat_postEphemeral(
+                        channel=user_id,
+                        user=user_id,
+                        text="❌ Car not found. Please try again."
+                    )
+                    return
+                
+                channel_id = car_info['channel_id']
+            
+            # Convert selected user IDs to mentions for the command
+            user_mentions = []
+            for option in selected_options:
+                user_mentions.append(f"<@{option['value']}>")
+            
+            user_input = " ".join(user_mentions)
+            
+            # Import and call the existing /boot command logic
+            from commands.member import cmd_boot
+            
+            # Create a mock command object like slash commands use
+            class MockCommand:
+                def __init__(self, text, user_id, channel_id):
+                    self.data = {
+                        "text": text,
+                        "user_id": user_id,
+                        "channel_id": channel_id
+                    }
+                
+                def get(self, key):
+                    return self.data.get(key)
+                
+                def __getitem__(self, key):
+                    return self.data[key]
+            
+            # Create a mock respond function that sends ephemeral messages
+            def mock_respond(text):
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text=text
+                )
+            
+            # Format the command text to include the car_id
+            command_text = f"{car_id} {user_input}"
+            print(f"🔍 DEBUG: Calling cmd_boot with text: {command_text}")
+            
+            # Create the mock command
+            mock_command = MockCommand(command_text, user_id, channel_id)
+            
+            # Execute the boot command directly
+            cmd_boot(lambda: None, mock_respond, mock_command)
+            
+            # Refresh the Home Tab
+            update_home_tab_for_user(user_id)
+            
+        except Exception as e:
+            print(f"Error processing filtered boot submission: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=f"❌ Error processing your request: {str(e)}"
+            )
     
     @bolt_app.view(re.compile(r"simple_add_\d+"))
     def handle_simple_add_submission(ack, body, client):
