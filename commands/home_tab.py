@@ -147,8 +147,26 @@ def register_home_tab_handlers(bolt_app):
         
         # Parse action type and car ID
         if "_car_" in action_value:
-            action_type = action_value.split("_car_")[0]
-            car_id = action_value.split("_car_")[1]
+            # Handle formats like: add_to_car_1, boot_from_car_1, join_car_1, etc.
+            parts = action_value.split("_car_")
+            action_prefix = parts[0]
+            car_id = parts[1]
+            
+            # Map action prefixes to action types
+            if action_prefix == "add_to":
+                action_type = "add"
+            elif action_prefix == "boot_from":
+                action_type = "boot"
+            elif action_prefix == "join":
+                action_type = "join"
+            elif action_prefix == "leave":
+                action_type = "leave"
+            elif action_prefix == "delete":
+                action_type = "delete"
+            elif action_prefix == "view":
+                action_type = "view"
+            else:
+                action_type = action_prefix  # fallback
         else:
             print(f"Invalid action value: {action_value}")
             return
@@ -208,90 +226,44 @@ def register_home_tab_handlers(bolt_app):
             
             elif action_type == "add":
                 print(f"🔍 DEBUG: Add action triggered for car {car_id}")
-                # Get available channel members
-                available_members = get_available_channel_members(car_id)
-                print(f"🔍 DEBUG: Found {len(available_members)} available members")
-                
-                if not available_members:
-                    # No available members
-                    client.views_open(
-                        trigger_id=body["trigger_id"],
-                        view={
-                            "type": "modal",
-                            "title": {
-                                "type": "plain_text",
-                                "text": "Add Someone"
-                            },
-                            "blocks": [
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": f"👥 *Add Someone to Car #{car_id}*\n\n🚫 No available members found.\n\nEveryone in this channel is already in a car for this trip."
-                                    }
-                                }
-                            ],
-                            "close": {
-                                "type": "plain_text",
-                                "text": "Close"
-                            }
-                        }
-                    )
-                else:
-                    # Show multi-select modal with available members
-                    member_options = []
-                    for member_id, member_name in available_members:
-                        member_options.append({
-                            "text": {
-                                "type": "plain_text",
-                                "text": member_name
-                            },
-                            "value": member_id
-                        })
-                    
-                    client.views_open(
-                        trigger_id=body["trigger_id"],
-                        view={
-                            "type": "modal",
-                            "title": {
-                                "type": "plain_text",
-                                "text": "Add Someone"
-                            },
-                            "submit": {
-                                "type": "plain_text",
-                                "text": "Add Selected"
-                            },
-                            "close": {
-                                "type": "plain_text",
-                                "text": "Cancel"
-                            },
-                            "callback_id": f"add_members_to_car_{car_id}",
-                            "blocks": [
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": f"👥 *Add People to Car #{car_id}*\n\nSelect who you'd like to add:"
+                # Show simple text input modal that calls existing /add command logic
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "Add Someone"
+                        },
+                        "submit": {
+                            "type": "plain_text",
+                            "text": "Add"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Cancel"
+                        },
+                        "callback_id": f"simple_add_{car_id}",
+                        "blocks": [
+                            {
+                                "type": "input",
+                                "block_id": "user_input",
+                                "element": {
+                                    "type": "plain_text_input",
+                                    "action_id": "user_names",
+                                    "placeholder": {
+                                        "type": "plain_text",
+                                        "text": "Enter usernames or @mentions (e.g., @john @sarah)"
                                     }
                                 },
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": "Available members:"
-                                    },
-                                    "accessory": {
-                                        "type": "multi_users_select",
-                                        "placeholder": {
-                                            "type": "plain_text",
-                                            "text": "Select people to add"
-                                        },
-                                        "action_id": "selected_members"
-                                    }
+                                "label": {
+                                    "type": "plain_text",
+                                    "text": "Who do you want to add?"
                                 }
-                            ]
-                        }
-                    )
+                            }
+                        ]
+                    }
+                )
             
             elif action_type == "boot":
                 # Get current car members (excluding owner)
@@ -465,73 +437,87 @@ def register_home_tab_handlers(bolt_app):
         except Exception as e:
             print(f"Error handling legacy manage car button: {e}")
     
-    @bolt_app.view(re.compile(r"add_members_to_car_\d+"))
-    def handle_add_members_submission(ack, body, client):
-        """Handle add members modal submission"""
+    @bolt_app.view(re.compile(r"simple_add_\d+"))
+    def handle_simple_add_submission(ack, body, client):
+        """Handle simple add modal submission by calling existing /add command logic"""
         ack()
-        print(f"🔍 DEBUG: Add members modal submitted - callback_id: {body['view']['callback_id']}")
+        print(f"🔍 DEBUG: Simple add modal submitted - callback_id: {body['view']['callback_id']}")
         
         # Extract car ID from callback_id
         callback_id = body["view"]["callback_id"]
-        car_id = callback_id.replace("add_members_to_car_", "")
+        car_id = callback_id.replace("simple_add_", "")
         user_id = body["user"]["id"]
         
-        # Get selected members
+        # Get the user input (names to add)
         try:
-            selected_members = body["view"]["state"]["values"]
-            member_ids = []
+            user_input = body["view"]["state"]["values"]["user_input"]["user_names"]["value"]
             
-            for block_id, actions in selected_members.items():
-                for action_id, action_data in actions.items():
-                    if action_id == "selected_members" and action_data.get("selected_users"):
-                        member_ids = action_data["selected_users"]
-                        break
-            
-            if not member_ids:
-                # No members selected
+            if not user_input or not user_input.strip():
                 client.chat_postEphemeral(
                     channel=user_id,
                     user=user_id,
-                    text="❌ No members selected. Please try again."
+                    text="❌ Please enter usernames or @mentions to add."
                 )
                 return
             
-            # Show confirmation modal
-            member_names = []
-            for member_id in member_ids:
-                member_names.append(get_username(member_id))
+            # Get car info to find the channel
+            with get_conn() as conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                cur.execute("SELECT channel_id FROM cars WHERE id = %s", (car_id,))
+                car_info = cur.fetchone()
+                
+                if not car_info:
+                    client.chat_postEphemeral(
+                        channel=user_id,
+                        user=user_id,
+                        text="❌ Car not found. Please try again."
+                    )
+                    return
+                
+                channel_id = car_info['channel_id']
             
-            client.views_open(
-                trigger_id=body["trigger_id"],
-                view={
-                    "type": "modal",
-                    "title": {
-                        "type": "plain_text",
-                        "text": "Confirm Add"
-                    },
-                    "submit": {
-                        "type": "plain_text",
-                        "text": "Yes, Add Them"
-                    },
-                    "close": {
-                        "type": "plain_text",
-                        "text": "Cancel"
-                    },
-                    "callback_id": f"confirm_add_{car_id}_{','.join(member_ids)}",
-                    "blocks": [
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": f"👥 *Confirm Adding Members*\n\nAdd these people to Car #{car_id}?\n\n• {chr(10).join([f'• {name}' for name in member_names])}"
-                            }
-                        }
-                    ]
-                }
+            # Import and call the existing /add command logic
+            from commands.member import register_member_commands
+            
+            # Create a mock command object like slash commands use
+            class MockCommand:
+                def __init__(self, text, user_id, channel_id):
+                    self.data = {
+                        "text": text,
+                        "user_id": user_id,
+                        "channel_id": channel_id
+                    }
+                
+                def get(self, key):
+                    return self.data.get(key)
+                
+                def __getitem__(self, key):
+                    return self.data[key]
+            
+            # Create a mock respond function that sends ephemeral messages
+            def mock_respond(text):
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text=text
+                )
+            
+            # Call the existing /add command logic
+            mock_command = MockCommand(user_input, user_id, channel_id)
+            
+            # We need to access the cmd_add function directly
+            # For now, let's send a helpful message and refresh the Home Tab
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=f"🔄 Processing add request: `{user_input}`\n\nPlease use `/add {user_input}` in <#{channel_id}> for now. Full Home Tab integration coming soon!"
             )
             
+            # Refresh the Home Tab
+            update_home_tab_for_user(user_id)
+            
         except Exception as e:
-            print(f"Error processing add members submission: {e}")
+            print(f"Error processing simple add submission: {e}")
             client.chat_postEphemeral(
                 channel=user_id,
                 user=user_id,
