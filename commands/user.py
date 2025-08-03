@@ -84,7 +84,7 @@ def register_user_commands(bolt_app):
                 available_seats = car['seats'] - car['filled']
                 response_lines.append(f"• `{car['id']}`: *{car['name']}* - {available_seats} seats available (created by <@{car['created_by']}>)")
             response_lines.append("")
-            response_lines.append("Use `/in <car_owner_name>` to join a car!")
+            response_lines.append("Use `/in @car_owner` to join a car!")
         else:
             response_lines.append("**No cars with available space.** Someone should create a new car with `/car`!")
         

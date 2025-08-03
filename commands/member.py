@@ -161,6 +161,35 @@ def register_member_commands(bolt_app):
             
             trip = trip_row[0]
             
+            # Check if the requesting user already has their own car in this trip
+            cur.execute(
+                "SELECT id, name FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
+                (channel_id, trip, user)
+            )
+            user_car = cur.fetchone()
+            
+            if user_car:
+                user_car_id, user_car_name = user_car
+                return eph(respond, f":x: You already have your own car (*{user_car_name}*) on *{trip}*. Car owners cannot join other cars.")
+            
+            # Check if user has any pending join requests
+            cur.execute(
+                "SELECT jr.car_id, c.name, c.created_by FROM join_requests jr JOIN cars c ON jr.car_id = c.id WHERE jr.user_id=%s AND c.channel_id=%s AND c.trip=%s",
+                (user, channel_id, trip)
+            )
+            pending_request = cur.fetchone()
+            
+            if pending_request:
+                pending_car_id, pending_car_name, pending_car_owner = pending_request
+                return eph(respond, f":x: You already have a pending request to join *{pending_car_name}* (owned by <@{pending_car_owner}>). You can only have one pending request at a time.")
+            
+            # Check if user is already in a car (for switching confirmation)
+            cur.execute(
+                "SELECT cm.car_id, c.name, c.created_by FROM car_members cm JOIN cars c ON cm.car_id = c.id WHERE cm.user_id=%s AND c.channel_id=%s AND c.trip=%s",
+                (user, channel_id, trip)
+            )
+            current_car = cur.fetchone()
+            
             # Find the car owned by the target user in this trip
             cur.execute(
                 "SELECT id, name FROM cars WHERE channel_id=%s AND trip=%s AND created_by=%s",
@@ -174,6 +203,46 @@ def register_member_commands(bolt_app):
             car_id, car_name = car_row
             creator = target_car_owner
         
+        # If user is already in a car, show confirmation dialog for switching
+        if current_car:
+            current_car_id, current_car_name, current_car_owner = current_car
+            
+            # Send confirmation dialog to the requesting user
+            bolt_app.client.chat_postMessage(
+                channel=user,
+                text=f":warning: You are currently in *{current_car_name}* (owned by <@{current_car_owner}>). Do you want to switch to *{car_name}* (owned by <@{creator}>)?",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f":warning: *You are currently in a car*\n:car: Current car: *{current_car_name}* (owned by <@{current_car_owner}>)\n:arrow_right: Requested car: *{car_name}* (owned by <@{creator}>)\n:round_pushpin: Trip: *{trip}*\n\nDo you want to switch cars?"
+                        }
+                    },
+                    {
+                        "type": "actions",
+                        "elements": [
+                            {
+                                "type": "button",
+                                "text": {"type": "plain_text", "text": "Yes, Switch Cars"},
+                                "style": "primary",
+                                "action_id": "confirm_car_switch",
+                                "value": f"{car_id}:{user}:{current_car_id}"
+                            },
+                            {
+                                "type": "button",
+                                "text": {"type": "plain_text", "text": "Cancel"},
+                                "style": "danger",
+                                "action_id": "cancel_car_switch",
+                                "value": f"{car_id}:{user}"
+                            }
+                        ]
+                    }
+                ]
+            )
+            return eph(respond, f":hourglass_flowing_sand: Confirmation sent to switch from *{current_car_name}* to *{car_name}*.")
+        
+        # User is not in a car, proceed with normal join request
         with get_conn() as conn:
             cur = conn.cursor()
             try:
@@ -239,30 +308,29 @@ def register_member_commands(bolt_app):
             
             trip, car_name, car_owner = car_row
             
-            # CRITICAL BUG FIX: Check if user is already in ANY car for this trip
+            # Check if user is already in ANY car for this trip (for car switching)
             cur.execute(
-                "SELECT c.name, c.created_by FROM car_members cm JOIN cars c ON cm.car_id = c.id WHERE cm.user_id=%s AND c.trip=%s AND c.channel_id=%s",
+                "SELECT cm.car_id, c.name, c.created_by FROM car_members cm JOIN cars c ON cm.car_id = c.id WHERE cm.user_id=%s AND c.trip=%s AND c.channel_id=%s",
                 (user_to_add, trip, channel_id)
             )
             existing_car = cur.fetchone()
             
+            old_car_info = None
             if existing_car:
-                existing_car_name, existing_car_owner = existing_car
-                # Remove the join request since it's no longer valid
-                cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
-                conn.commit()
+                old_car_id, existing_car_name, existing_car_owner = existing_car
+                old_car_info = (old_car_id, existing_car_name, existing_car_owner)
                 
-                client.chat_update(
-                    channel=body["channel"]["id"], 
-                    ts=body["container"]["message_ts"], 
-                    text=f":x: Cannot approve <@{user_to_add}> - they're already in *{existing_car_name}* (owned by <@{existing_car_owner}>).", 
-                    blocks=[]
-                )
+                # Remove user from their old car
+                cur.execute("DELETE FROM car_members WHERE car_id=%s AND user_id=%s", (old_car_id, user_to_add))
+                
+                # Notify the old car owner that the user left
                 client.chat_postMessage(
-                    channel=user_to_add, 
-                    text=f":x: Your request for *{car_name}* was denied because you're already in *{existing_car_name}* on *{trip}*. Use `/out` to leave your current car first."
+                    channel=existing_car_owner,
+                    text=f":information_source: <@{user_to_add}> left your car *{existing_car_name}* to join another car on *{trip}*."
                 )
-                return
+                
+                # Announce the departure from the old car
+                post_announce(trip, channel_id, f":wave: <@{user_to_add}> left *{existing_car_name}* to switch cars on *{trip}*.")
             
             # Check if user is already in THIS car (shouldn't happen, but safety check)
             cur.execute("SELECT 1 FROM car_members WHERE car_id=%s AND user_id=%s", (car_id, user_to_add))
@@ -307,9 +375,16 @@ def register_member_commands(bolt_app):
             cur.execute("INSERT INTO car_members(car_id, user_id) VALUES(%s,%s)", (car_id, user_to_add))
             conn.commit()
             
-        client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":white_check_mark: Approved <@{user_to_add}> for car `{car_id}`.", blocks=[])
-        client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You were approved for *{car_name}* on *{trip}*!")
-        post_announce(trip, channel_id, f":seat: <@{user_to_add}> joined car `{car_id}` on *{trip}*.")
+        # Update messages based on whether this was a car switch or regular join
+        if old_car_info:
+            old_car_id, old_car_name, old_car_owner = old_car_info
+            client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":white_check_mark: Approved <@{user_to_add}> for car `{car_id}` (switched from *{old_car_name}*).", blocks=[])
+            client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You successfully switched from *{old_car_name}* to *{car_name}* on *{trip}*!")
+            post_announce(trip, channel_id, f":arrows_counterclockwise: <@{user_to_add}> switched to car `{car_id}` (*{car_name}*) on *{trip}*.")
+        else:
+            client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":white_check_mark: Approved <@{user_to_add}> for car `{car_id}`.", blocks=[])
+            client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You were approved for *{car_name}* on *{trip}*!")
+            post_announce(trip, channel_id, f":seat: <@{user_to_add}> joined car `{car_id}` (*{car_name}*) on *{trip}*.")
 
     @bolt_app.action("deny_request")
     def act_deny(ack, body, client):
@@ -323,6 +398,117 @@ def register_member_commands(bolt_app):
             conn.commit()
         client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":x: Denied <@{user_to_deny}> for car `{car_id}`.", blocks=[])
         client.chat_postMessage(channel=user_to_deny, text=f":x: Your request for car `{car_id}` was denied.")
+
+    @bolt_app.action("confirm_car_switch")
+    def act_confirm_car_switch(ack, body, client):
+        ack()
+        car_id, user_id, current_car_id = body["actions"][0]["value"].split(":")
+        car_id = int(car_id)
+        current_car_id = int(current_car_id)
+        
+        with get_conn() as conn:
+            cur = conn.cursor()
+            
+            # Get car and trip info for the new car
+            cur.execute("SELECT trip, name, created_by, channel_id FROM cars WHERE id=%s", (car_id,))
+            car_row = cur.fetchone()
+            if not car_row:
+                client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":x: Error: Car `{car_id}` no longer exists.", blocks=[])
+                return
+            
+            trip, car_name, car_owner, channel_id = car_row
+            
+            # Create the join request
+            try:
+                cur.execute(
+                    "INSERT INTO join_requests(car_id, user_id) VALUES(%s,%s)",
+                    (car_id, user_id)
+                )
+                conn.commit()
+            except psycopg2.errors.UniqueViolation:
+                client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":x: You already have a pending request for this car.", blocks=[])
+                return
+        
+        # Send join request to the new car owner
+        bolt_app.client.chat_postMessage(
+            channel=car_owner,
+            text=f":wave: <@{user_id}> wants to join your car `{car_id}` (*{car_name}*) on *{trip}*.",
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":wave: *<@{user_id}> wants to join your car `{car_id}`*\n:car: Car: *{car_name}*\n:round_pushpin: Trip: *{trip}*\n:information_source: This user is switching from another car."
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Approve"},
+                            "style": "primary",
+                            "action_id": "approve_request",
+                            "value": f"{car_id}:{user_id}"
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Deny"},
+                            "style": "danger",
+                            "action_id": "deny_request",
+                            "value": f"{car_id}:{user_id}"
+                        }
+                    ]
+                }
+            ]
+        )
+        
+        client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=f":white_check_mark: Car switch request sent to <@{car_owner}>.", blocks=[])
+
+    @bolt_app.action("cancel_car_switch")
+    def act_cancel_car_switch(ack, body, client):
+        ack()
+        client.chat_update(channel=body["channel"]["id"], ts=body["container"]["message_ts"], text=":x: Car switch cancelled.", blocks=[])
+
+    @bolt_app.command("/cancel")
+    def cmd_cancel(ack, respond, command):
+        ack()
+        channel_id = command["channel_id"]
+        
+        # Check if bot is in channel first
+        if not check_bot_channel_access(channel_id, respond):
+            return
+        
+        user = command["user_id"]
+        
+        # Get the active trip for this channel
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM trips WHERE channel_id=%s AND active=TRUE", (channel_id,))
+            trip_row = cur.fetchone()
+            
+            if not trip_row:
+                return eph(respond, ":x: No active trip in this channel. Create one with `/trip TripName` first.")
+            
+            trip = trip_row[0]
+            
+            # Check if user has any pending join requests
+            cur.execute(
+                "SELECT jr.car_id, c.name, c.created_by FROM join_requests jr JOIN cars c ON jr.car_id = c.id WHERE jr.user_id=%s AND c.channel_id=%s AND c.trip=%s",
+                (user, channel_id, trip)
+            )
+            pending_request = cur.fetchone()
+            
+            if not pending_request:
+                return eph(respond, ":x: You don't have any pending join requests to cancel.")
+            
+            car_id, car_name, car_owner = pending_request
+            
+            # Remove the join request
+            cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user))
+            conn.commit()
+        
+        eph(respond, f":white_check_mark: Cancelled your request to join *{car_name}* (owned by <@{car_owner}>) on *{trip}*.")
 
     @bolt_app.command("/out")
     def cmd_out(ack, respond, command):

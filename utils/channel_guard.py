@@ -1,51 +1,56 @@
 """
-Channel Guard - Restrict commands to channels where bot is added
+Channel Guard - Restrict commands to allowed channels defined in environment variables
 """
+import os
 
-def is_bot_in_channel(channel_id: str) -> bool:
-    """Check if the bot is added to the specified channel"""
-    from app import bolt_app  # Import here to avoid circular imports
-    try:
-        # Try to get channel info - this will fail if bot isn't in channel
-        result = bolt_app.client.conversations_info(channel=channel_id)
-        return result.get("ok", False)
-    except Exception as e:
-        # If we get channel_not_found or not_in_channel, bot isn't added
-        error_str = str(e).lower()
-        if any(err in error_str for err in ["channel_not_found", "not_in_channel"]):
-            return False
-        # For other errors, assume bot is in channel to avoid blocking legitimate usage
+def get_allowed_channels():
+    """Get list of allowed channel IDs from environment variables"""
+    allowed_channels_env = os.getenv("ALLOWED_CHANNELS", "")
+    if not allowed_channels_env:
+        return []
+    
+    # Split by comma and strip whitespace
+    return [channel.strip() for channel in allowed_channels_env.split(",") if channel.strip()]
+
+def is_channel_allowed(channel_id: str) -> bool:
+    """Check if the channel is in the allowed channels list"""
+    allowed_channels = get_allowed_channels()
+    
+    # If no channels are configured, allow all channels (backward compatibility)
+    if not allowed_channels:
         return True
+    
+    return channel_id in allowed_channels
 
-def require_bot_in_channel(respond):
-    """Decorator to ensure bot is in channel before executing command"""
+def require_allowed_channel(respond):
+    """Decorator to ensure command is used in an allowed channel"""
     def decorator(func):
         def wrapper(ack, respond, command, *args, **kwargs):
             ack()
             channel_id = command["channel_id"]
             
-            if not is_bot_in_channel(channel_id):
+            if not is_channel_allowed(channel_id):
                 respond(
-                    ":warning: This bot must be added to the channel to use carpool commands.\n"
-                    "Add me with: `/invite @carpool`",
+                    ":x: This channel is not enabled for carpool commands.\n"
+                    "Please contact your administrator to enable this channel for the carpool bot.",
                     response_type="ephemeral"
                 )
                 return
             
-            # Bot is in channel, proceed with command
+            # Channel is allowed, proceed with command
             return func(ack, respond, command, *args, **kwargs)
         return wrapper
     return decorator
 
 def check_bot_channel_access(channel_id: str, respond) -> bool:
     """
-    Check if bot has access to channel and send error message if not.
-    Returns True if bot has access, False otherwise.
+    Check if channel is allowed for bot usage and send error message if not.
+    Returns True if channel is allowed, False otherwise.
     """
-    if not is_bot_in_channel(channel_id):
+    if not is_channel_allowed(channel_id):
         respond(
-            ":warning: This bot must be added to the channel to use carpool commands.\n"
-            "Add me with: `/invite @carpool`",
+            ":x: This channel is not enabled for carpool commands.\n"
+            "Please contact your administrator to enable this channel for the carpool bot.",
             response_type="ephemeral"
         )
         return False
