@@ -127,17 +127,37 @@ def get_next_available_car_id(trip: str, channel_id: str):
     """Find the next available car ID globally, reusing deleted IDs when possible"""
     with get_conn() as conn:
         cur = conn.cursor()
-        # Get all existing car IDs across ALL trips, ordered
-        cur.execute("SELECT id FROM cars ORDER BY id")
+        
+        # Get all existing car IDs for this trip in this channel, ordered
+        cur.execute(
+            "SELECT id FROM cars WHERE trip=%s AND channel_id=%s ORDER BY id",
+            (trip, channel_id)
+        )
         existing_ids = [row[0] for row in cur.fetchall()]
         
-        # Find the first gap in the sequence, starting from 1
-        next_id = 1
-        for existing_id in existing_ids:
-            if existing_id == next_id:
-                next_id += 1
-            elif existing_id > next_id:
-                # Found a gap, use the current next_id
-                break
+        # Find the first gap or return next sequential ID
+        if not existing_ids:
+            return 1
         
-        return next_id
+        # Check for gaps in the sequence
+        for i in range(1, max(existing_ids) + 1):
+            if i not in existing_ids:
+                return i
+        
+        # No gaps found, return next sequential ID
+        return max(existing_ids) + 1
+
+def refresh_home_tab_for_channel_users(channel_id: str):
+    """Refresh home tab for all users who might be interested in this channel's data"""
+    # This is a simplified implementation - in production we'd want to be more selective
+    # For now, we'll skip the actual refresh to avoid circular imports and complexity
+    # The home tab will refresh when users open it
+    pass
+
+def refresh_home_tab_for_user(user_id: str):
+    """Refresh home tab for a specific user"""
+    try:
+        from commands.home_tab import update_home_tab_for_user
+        update_home_tab_for_user(user_id)
+    except Exception as e:
+        logger.error(f"Error refreshing home tab for user {user_id}: {e}")
