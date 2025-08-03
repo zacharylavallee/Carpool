@@ -7,6 +7,231 @@ from config.database import get_conn
 from utils.helpers import eph, auto_dismiss_eph, auto_dismiss_eph_with_actions, get_channel_members, get_active_trip, post_announce, get_username
 from utils.channel_guard import check_bot_channel_access
 
+def add_users_to_car(car_id, channel_id, user_id, target_user_ids, client=None):
+    """Standalone function to add users to a car. Returns (success, message, added_users)"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            
+            # Get car and trip info
+            cur.execute(
+                "SELECT name, trip, created_by FROM cars WHERE id=%s AND channel_id=%s",
+                (car_id, channel_id)
+            )
+            car_info = cur.fetchone()
+            
+            if not car_info:
+                return False, "❌ Car not found.", []
+            
+            car_name, trip, car_owner = car_info
+            
+            # Check if user has permission to add to this car
+            if user_id != car_owner:
+                return False, "❌ Only the car owner can add people to their car.", []
+            
+            # Check conflicts and add users
+            users_to_add = []
+            already_in_car = []
+            already_in_other_cars = []
+            
+            for target_user in target_user_ids:
+                # Check if user is already in this car
+                cur.execute(
+                    "SELECT 1 FROM car_members WHERE car_id=%s AND user_id=%s",
+                    (car_id, target_user)
+                )
+                if cur.fetchone():
+                    already_in_car.append(target_user)
+                    continue
+                
+                # Check if user is already in ANY other car for this trip
+                cur.execute(
+                    "SELECT c.name, c.created_by FROM car_members cm JOIN cars c ON cm.car_id = c.id WHERE cm.user_id=%s AND c.trip=%s AND c.channel_id=%s",
+                    (target_user, trip, channel_id)
+                )
+                existing_car = cur.fetchone()
+                
+                if existing_car:
+                    existing_car_name, existing_car_owner = existing_car
+                    already_in_other_cars.append((target_user, existing_car_name, existing_car_owner))
+                    continue
+                
+                users_to_add.append(target_user)
+            
+            # Build error messages for conflicts
+            error_messages = []
+            if already_in_car:
+                mentions = [f"<@{uid}>" for uid in already_in_car]
+                error_messages.append(f"Already in your car: {', '.join(mentions)}")
+            
+            if already_in_other_cars:
+                conflicts = [f"<@{uid}> (in *{car_name}* by <@{owner}>)" for uid, car_name, owner in already_in_other_cars]
+                error_messages.append(f"Already in other cars: {', '.join(conflicts)}")
+            
+            if not users_to_add:
+                if error_messages:
+                    return False, f"❌ No users added. {' | '.join(error_messages)}", []
+                else:
+                    return False, "❌ No valid users to add.", []
+            
+            # Add all valid users to the car
+            added_users = []
+            for target_user in users_to_add:
+                try:
+                    cur.execute(
+                        "INSERT INTO car_members(car_id, user_id) VALUES(%s, %s)",
+                        (car_id, target_user)
+                    )
+                    added_users.append(target_user)
+                except Exception as e:
+                    print(f"⚠️ add_users_to_car unexpected error for user {target_user}: {e}")
+                    continue
+            
+            conn.commit()
+            
+            # Build success message
+            if added_users:
+                added_mentions = [f"<@{uid}>" for uid in added_users]
+                success_msg = f"✅ You added {', '.join(added_mentions)} to your car (*{car_name}*)."
+                
+                if error_messages:
+                    success_msg += f"\n\n⚠️ {' | '.join(error_messages)}"
+                
+                # Send DMs to added users if client is provided
+                if client:
+                    for target_user in added_users:
+                        try:
+                            client.chat_postMessage(
+                                channel=target_user, 
+                                text=f"🚗 You were added to *{car_name}* on *{trip}* by <@{user_id}>."
+                            )
+                        except Exception as e:
+                            print(f"⚠️ add_users_to_car failed to send DM to {target_user}: {e}")
+                
+                # Post announcement
+                if len(added_users) == 1:
+                    announcement = f":seat: <@{user_id}> added <@{added_users[0]}> to *{car_name}* on *{trip}*."
+                else:
+                    announcement = f":seat: <@{user_id}> added {', '.join(added_mentions)} to *{car_name}* on *{trip}*."
+                
+                post_announce(trip, channel_id, announcement)
+                
+                return True, success_msg, added_users
+            else:
+                return False, "❌ No users were added.", []
+                
+    except Exception as e:
+        print(f"Error in add_users_to_car: {e}")
+        return False, f"❌ Error adding users: {str(e)}", []
+
+def boot_users_from_car(car_id, channel_id, user_id, target_user_ids, client=None):
+    """Standalone function to boot users from a car. Returns (success, message, booted_users)"""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            
+            # Get car and trip info
+            cur.execute(
+                "SELECT name, trip, created_by FROM cars WHERE id=%s AND channel_id=%s",
+                (car_id, channel_id)
+            )
+            car_info = cur.fetchone()
+            
+            if not car_info:
+                return False, "❌ Car not found.", []
+            
+            car_name, trip, car_owner = car_info
+            
+            # Check if user has permission to boot from this car
+            if user_id != car_owner:
+                return False, "❌ Only the car owner can remove people from their car.", []
+            
+            # Check which users are actually in the car and can be booted
+            users_to_boot = []
+            not_in_car = []
+            cannot_boot_owner = []
+            
+            for target_user in target_user_ids:
+                # Check if target user is the car owner (cannot boot owner)
+                if target_user == car_owner:
+                    cannot_boot_owner.append(target_user)
+                    continue
+                
+                # Check if user is in this car
+                cur.execute(
+                    "SELECT 1 FROM car_members WHERE car_id=%s AND user_id=%s",
+                    (car_id, target_user)
+                )
+                if cur.fetchone():
+                    users_to_boot.append(target_user)
+                else:
+                    not_in_car.append(target_user)
+            
+            # Build error messages
+            error_messages = []
+            if not_in_car:
+                mentions = [f"<@{uid}>" for uid in not_in_car]
+                error_messages.append(f"Not in your car: {', '.join(mentions)}")
+            
+            if cannot_boot_owner:
+                error_messages.append("Cannot remove the car owner")
+            
+            if not users_to_boot:
+                if error_messages:
+                    return False, f"❌ No users removed. {' | '.join(error_messages)}", []
+                else:
+                    return False, "❌ No valid users to remove.", []
+            
+            # Remove users from the car
+            booted_users = []
+            for target_user in users_to_boot:
+                try:
+                    cur.execute(
+                        "DELETE FROM car_members WHERE car_id=%s AND user_id=%s",
+                        (car_id, target_user)
+                    )
+                    booted_users.append(target_user)
+                except Exception as e:
+                    print(f"⚠️ boot_users_from_car unexpected error for user {target_user}: {e}")
+                    continue
+            
+            conn.commit()
+            
+            # Build success message
+            if booted_users:
+                booted_mentions = [f"<@{uid}>" for uid in booted_users]
+                success_msg = f"✅ You removed {', '.join(booted_mentions)} from your car (*{car_name}*)."
+                
+                if error_messages:
+                    success_msg += f"\n\n⚠️ {' | '.join(error_messages)}"
+                
+                # Send DMs to booted users if client is provided
+                if client:
+                    for target_user in booted_users:
+                        try:
+                            client.chat_postMessage(
+                                channel=target_user, 
+                                text=f"🚗 You were removed from *{car_name}* on *{trip}* by <@{user_id}>."
+                            )
+                        except Exception as e:
+                            print(f"⚠️ boot_users_from_car failed to send DM to {target_user}: {e}")
+                
+                # Post announcement
+                if len(booted_users) == 1:
+                    announcement = f":seat: <@{user_id}> removed <@{booted_users[0]}> from *{car_name}* on *{trip}*."
+                else:
+                    announcement = f":seat: <@{user_id}> removed {', '.join(booted_mentions)} from *{car_name}* on *{trip}*."
+                
+                post_announce(trip, channel_id, announcement)
+                
+                return True, success_msg, booted_users
+            else:
+                return False, "❌ No users were removed.", []
+                
+    except Exception as e:
+        print(f"Error in boot_users_from_car: {e}")
+        return False, f"❌ Error removing users: {str(e)}", []
+
 def register_member_commands(bolt_app):
     """Register member management commands"""
     

@@ -553,43 +553,26 @@ def register_home_tab_handlers(bolt_app):
             for option in selected_options:
                 user_mentions.append(f"<@{option['value']}>")
             
-            user_input = " ".join(user_mentions)
+            # Extract user IDs from the selected options
+            target_user_ids = [option['value'] for option in selected_options]
+            print(f"🔍 DEBUG: Adding users {target_user_ids} to car {car_id}")
             
-            # Import and call the existing /add command logic
-            from commands.member import cmd_add
+            # Use the standalone add function
+            from commands.member import add_users_to_car
+            success, message, added_users = add_users_to_car(
+                car_id=car_id,
+                channel_id=channel_id,
+                user_id=user_id,
+                target_user_ids=target_user_ids,
+                client=client
+            )
             
-            # Create a mock command object like slash commands use
-            class MockCommand:
-                def __init__(self, text, user_id, channel_id):
-                    self.data = {
-                        "text": text,
-                        "user_id": user_id,
-                        "channel_id": channel_id
-                    }
-                
-                def get(self, key):
-                    return self.data.get(key)
-                
-                def __getitem__(self, key):
-                    return self.data[key]
-            
-            # Create a mock respond function that sends ephemeral messages
-            def mock_respond(text):
-                client.chat_postEphemeral(
-                    channel=user_id,
-                    user=user_id,
-                    text=text
-                )
-            
-            # Format the command text to include the car_id
-            command_text = f"{car_id} {user_input}"
-            print(f"🔍 DEBUG: Calling cmd_add with text: {command_text}")
-            
-            # Create the mock command
-            mock_command = MockCommand(command_text, user_id, channel_id)
-            
-            # Execute the add command directly
-            cmd_add(lambda: None, mock_respond, mock_command)
+            # Send the result message
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=message
+            )
             
             # Refresh the Home Tab
             update_home_tab_for_user(user_id)
@@ -646,43 +629,26 @@ def register_home_tab_handlers(bolt_app):
             for option in selected_options:
                 user_mentions.append(f"<@{option['value']}>")
             
-            user_input = " ".join(user_mentions)
+            # Extract user IDs from the selected options
+            target_user_ids = [option['value'] for option in selected_options]
+            print(f"🔍 DEBUG: Booting users {target_user_ids} from car {car_id}")
             
-            # Import and call the existing /boot command logic
-            from commands.member import cmd_boot
+            # Use the standalone boot function
+            from commands.member import boot_users_from_car
+            success, message, booted_users = boot_users_from_car(
+                car_id=car_id,
+                channel_id=channel_id,
+                user_id=user_id,
+                target_user_ids=target_user_ids,
+                client=client
+            )
             
-            # Create a mock command object like slash commands use
-            class MockCommand:
-                def __init__(self, text, user_id, channel_id):
-                    self.data = {
-                        "text": text,
-                        "user_id": user_id,
-                        "channel_id": channel_id
-                    }
-                
-                def get(self, key):
-                    return self.data.get(key)
-                
-                def __getitem__(self, key):
-                    return self.data[key]
-            
-            # Create a mock respond function that sends ephemeral messages
-            def mock_respond(text):
-                client.chat_postEphemeral(
-                    channel=user_id,
-                    user=user_id,
-                    text=text
-                )
-            
-            # Format the command text to include the car_id
-            command_text = f"{car_id} {user_input}"
-            print(f"🔍 DEBUG: Calling cmd_boot with text: {command_text}")
-            
-            # Create the mock command
-            mock_command = MockCommand(command_text, user_id, channel_id)
-            
-            # Execute the boot command directly
-            cmd_boot(lambda: None, mock_respond, mock_command)
+            # Send the result message
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=message
+            )
             
             # Refresh the Home Tab
             update_home_tab_for_user(user_id)
