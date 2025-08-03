@@ -3,6 +3,7 @@ App Home Tab Dashboard for the carpool bot
 Provides a private, real-time view of carpool status without channel noise
 """
 import psycopg2.extras
+import re
 from config.database import get_conn
 from utils.helpers import get_username
 
@@ -132,7 +133,7 @@ def register_home_tab_handlers(bolt_app):
         except Exception as e:
             print(f"Error publishing home tab view: {e}")
     
-    @bolt_app.action("car_actions_*")
+    @bolt_app.action(re.compile(r"car_actions_\d+"))
     def handle_car_actions(ack, body, client):
         """Handle car action dropdown selections"""
         ack()
@@ -418,7 +419,49 @@ def register_home_tab_handlers(bolt_app):
         except Exception as e:
             print(f"Error handling car action {action_type}: {e}")
     
-    @bolt_app.view("add_members_to_car_*")
+    @bolt_app.action(re.compile(r"view_channel_[A-Z0-9]+"))
+    def handle_view_channel(ack, body, client):
+        """Handle channel button clicks - currently just acknowledge"""
+        ack()
+        
+        # Extract channel ID from action_id
+        action_id = body["actions"][0]["action_id"]
+        channel_id = action_id.replace("view_channel_", "")
+        user_id = body["user"]["id"]
+        
+        try:
+            # For now, just acknowledge the click
+            # In the future, this could navigate to the channel or show channel info
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=f"📍 Channel button clicked for <#{channel_id}>. Use Slack's channel navigation to visit the channel."
+            )
+            
+        except Exception as e:
+            print(f"Error handling view channel {channel_id}: {e}")
+    
+    @bolt_app.action(re.compile(r"manage_car_\d+"))
+    def handle_legacy_manage_car(ack, body, client):
+        """Handle legacy manage car button clicks - refresh Home Tab to show new UI"""
+        ack()
+        
+        user_id = body["user"]["id"]
+        
+        try:
+            # Refresh the Home Tab to show the updated UI with dropdowns
+            update_home_tab_for_user(user_id)
+            
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text="🔄 Home Tab refreshed! Please use the dropdown menu for car actions."
+            )
+            
+        except Exception as e:
+            print(f"Error handling legacy manage car button: {e}")
+    
+    @bolt_app.view(re.compile(r"add_members_to_car_\d+"))
     def handle_add_members_submission(ack, body, client):
         """Handle add members modal submission"""
         ack()
@@ -490,7 +533,7 @@ def register_home_tab_handlers(bolt_app):
                 text="❌ Error processing your request. Please try again."
             )
     
-    @bolt_app.view("boot_members_from_car_*")
+    @bolt_app.view(re.compile(r"boot_members_from_car_\d+"))
     def handle_boot_members_submission(ack, body, client):
         """Handle boot members modal submission"""
         ack()
@@ -562,7 +605,7 @@ def register_home_tab_handlers(bolt_app):
                 text="❌ Error processing your request. Please try again."
             )
     
-    @bolt_app.view("confirm_add_*")
+    @bolt_app.view(re.compile(r"confirm_add_\d+_[\w,]+"))
     def handle_confirm_add(ack, body, client):
         """Handle add confirmation and execute the database operation"""
         ack()
@@ -621,7 +664,7 @@ def register_home_tab_handlers(bolt_app):
                 text="❌ Error adding members. Please try again."
             )
     
-    @bolt_app.view("confirm_boot_*")
+    @bolt_app.view(re.compile(r"confirm_boot_\d+_[\w,]+"))
     def handle_confirm_boot(ack, body, client):
         """Handle boot confirmation and execute the database operation"""
         ack()
