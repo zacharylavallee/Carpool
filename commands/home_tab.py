@@ -266,79 +266,44 @@ def register_home_tab_handlers(bolt_app):
                 )
             
             elif action_type == "boot":
-                # Get current car members (excluding owner)
-                car_members = get_car_members_for_boot(car_id, user_id)
-                
-                if not car_members:
-                    # No members to boot
-                    client.views_open(
-                        trigger_id=body["trigger_id"],
-                        view={
-                            "type": "modal",
-                            "title": {
-                                "type": "plain_text",
-                                "text": "Boot Someone"
-                            },
-                            "blocks": [
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": f"👎 *Boot Someone from Car #{car_id}*\n\n🚫 No passengers to remove.\n\nYou're the only one in this car."
-                                    }
-                                }
-                            ],
-                            "close": {
-                                "type": "plain_text",
-                                "text": "Close"
-                            }
-                        }
-                    )
-                else:
-                    # Show multi-select modal with current members
-                    client.views_open(
-                        trigger_id=body["trigger_id"],
-                        view={
-                            "type": "modal",
-                            "title": {
-                                "type": "plain_text",
-                                "text": "Boot Someone"
-                            },
-                            "submit": {
-                                "type": "plain_text",
-                                "text": "Remove Selected"
-                            },
-                            "close": {
-                                "type": "plain_text",
-                                "text": "Cancel"
-                            },
-                            "callback_id": f"boot_members_from_car_{car_id}",
-                            "blocks": [
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": f"👎 *Remove People from Car #{car_id}*\n\nSelect who you'd like to remove:"
+                # Show simple text input modal for boot (like add)
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "Boot Someone"
+                        },
+                        "submit": {
+                            "type": "plain_text",
+                            "text": "Remove"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Cancel"
+                        },
+                        "callback_id": f"simple_boot_{car_id}",
+                        "blocks": [
+                            {
+                                "type": "input",
+                                "block_id": "user_input",
+                                "element": {
+                                    "type": "plain_text_input",
+                                    "action_id": "user_names",
+                                    "placeholder": {
+                                        "type": "plain_text",
+                                        "text": "Enter usernames or @mentions (e.g., @john @sarah)"
                                     }
                                 },
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": "Current passengers:"
-                                    },
-                                    "accessory": {
-                                        "type": "multi_users_select",
-                                        "placeholder": {
-                                            "type": "plain_text",
-                                            "text": "Select people to remove"
-                                        },
-                                        "action_id": "selected_members"
-                                    }
+                                "label": {
+                                    "type": "plain_text",
+                                    "text": "Who do you want to remove?"
                                 }
-                            ]
-                        }
-                    )
+                            }
+                        ]
+                    }
+                )
             
             elif action_type == "delete":
                 # Show delete car confirmation modal
@@ -518,6 +483,63 @@ def register_home_tab_handlers(bolt_app):
             
         except Exception as e:
             print(f"Error processing simple add submission: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text="❌ Error processing your request. Please try again."
+            )
+    
+    @bolt_app.view(re.compile(r"simple_boot_\d+"))
+    def handle_simple_boot_submission(ack, body, client):
+        """Handle simple boot modal submission by calling existing /boot command logic"""
+        ack()
+        print(f"🔍 DEBUG: Simple boot modal submitted - callback_id: {body['view']['callback_id']}")
+        
+        # Extract car ID from callback_id
+        callback_id = body["view"]["callback_id"]
+        car_id = callback_id.replace("simple_boot_", "")
+        user_id = body["user"]["id"]
+        
+        # Get the user input (names to remove)
+        try:
+            user_input = body["view"]["state"]["values"]["user_input"]["user_names"]["value"]
+            
+            if not user_input or not user_input.strip():
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text="❌ Please enter usernames or @mentions to remove."
+                )
+                return
+            
+            # Get car info to find the channel
+            with get_conn() as conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                cur.execute("SELECT channel_id FROM cars WHERE id = %s", (car_id,))
+                car_info = cur.fetchone()
+                
+                if not car_info:
+                    client.chat_postEphemeral(
+                        channel=user_id,
+                        user=user_id,
+                        text="❌ Car not found. Please try again."
+                    )
+                    return
+                
+                channel_id = car_info['channel_id']
+            
+            # For now, provide guidance to use the slash command
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=f"🔄 Processing boot request: `{user_input}`\n\nPlease use `/boot {user_input}` in <#{channel_id}> for now. Full Home Tab integration coming soon!"
+            )
+            
+            # Refresh the Home Tab
+            update_home_tab_for_user(user_id)
+            
+        except Exception as e:
+            print(f"Error processing simple boot submission: {e}")
             client.chat_postEphemeral(
                 channel=user_id,
                 user=user_id,
