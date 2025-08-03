@@ -6,6 +6,40 @@ import psycopg2.extras
 from config.database import get_conn
 from utils.helpers import get_username
 
+def build_car_visualization(driver_name, passengers, total_seats):
+    """Build a top-down car visualization with seats arranged in standard layout"""
+    
+    # Create seat array: [driver, front_passenger, back_left, back_right, back_left2, back_right2, ...]
+    seats = []
+    
+    # Add driver (always front-left)
+    if driver_name:
+        seats.append(f"[{driver_name[:8]}]")
+    else:
+        seats.append("[ - ]")
+    
+    # Add passengers to remaining seats
+    passenger_index = 0
+    for seat_num in range(1, total_seats):
+        if passenger_index < len(passengers):
+            passenger_name = passengers[passenger_index][:8]  # Limit to 8 chars
+            seats.append(f"[{passenger_name}]")
+            passenger_index += 1
+        else:
+            seats.append("[ - ]")
+    
+    # Arrange seats in car layout (2 seats per row)
+    car_rows = []
+    for i in range(0, len(seats), 2):
+        if i + 1 < len(seats):
+            # Two seats in this row
+            car_rows.append(f"{seats[i]} {seats[i+1]}")
+        else:
+            # Single seat in this row (odd number of seats)
+            car_rows.append(f"{seats[i]}")
+    
+    return "\n".join(car_rows)
+
 def register_home_tab_handlers(bolt_app):
     """Register App Home Tab event handlers"""
     
@@ -217,29 +251,21 @@ def build_home_tab_view(user_id):
                         
                         members = cur.fetchall()
                         
-                        # Build passenger list
+                        # Build passenger list with first names only
                         passengers = []
-                        owner_name = ""
+                        owner_first_name = ""
                         
                         for member in members:
                             username = get_username(member['user_id'])
+                            first_name = username.split()[0] if username else "Unknown"
+                            
                             if member['user_id'] == car_owner:
-                                owner_name = username
+                                owner_first_name = first_name
                             else:
-                                passengers.append(username)
+                                passengers.append(first_name)
                         
-                        # Create visual seat representation
-                        seat_display = []
-                        if owner_name:
-                            seat_display.append(f"👤 *{owner_name}* (Driver)")
-                        
-                        for passenger in passengers:
-                            seat_display.append(f"👤 {passenger}")
-                        
-                        # Add empty seats
-                        empty_seats = total_seats - filled_seats
-                        for _ in range(empty_seats):
-                            seat_display.append("💺 _Open_")
+                        # Create virtual car visualization (top-down view)
+                        car_visual = build_car_visualization(owner_first_name, passengers, total_seats)
                         
                         # Determine status and color
                         if filled_seats == total_seats:
@@ -252,12 +278,12 @@ def build_home_tab_view(user_id):
                             status = "🟡 *AVAILABLE*"
                             style = "primary"
                         
-                        # Car card layout
+                        # Car card layout with virtual car visualization
                         blocks.append({
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"🚗 *{car_name}* (Car #{car_id})\n{status} `{filled_seats}/{total_seats} seats`\n\n{chr(10).join(seat_display)}"
+                                "text": f"🚗 *{car_name}* (Car #{car_id})\n{status} `{filled_seats}/{total_seats} seats`\n\n```\n{car_visual}\n```"
                             },
                             "accessory": {
                                 "type": "button",
