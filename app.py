@@ -12,7 +12,7 @@ from slack_bolt.adapter.flask import SlackRequestHandler
 from config.database import init_db
 from utils.helpers import eph
 
-# Import command modules
+# Import command modules - CLEAN STATE, NO HOME TAB
 from commands.help import register_help_commands
 from commands.trip import register_trip_commands
 from commands.car import register_car_commands
