@@ -74,7 +74,16 @@ handler = SlackRequestHandler(bolt_app)
 # ─── WSGI entrypoint ─────────────────────────────────────────────────────
 @flask_app.route("/slack/events", methods=["POST"])
 def slack_events():
-    return handler.handle(request)
+    try:
+        # Handle URL verification challenge
+        if request.json and request.json.get("type") == "url_verification":
+            return request.json.get("challenge")
+        
+        # Handle normal Slack events
+        return handler.handle(request)
+    except Exception as e:
+        print(f"Error in slack_events: {e}")
+        return {"error": "Internal server error"}, 500
 
 # ─── OAuth endpoints for public distribution ─────────────────────────────
 @flask_app.route("/slack/install", methods=["GET"])
