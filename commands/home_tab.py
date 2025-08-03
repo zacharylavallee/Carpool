@@ -50,23 +50,38 @@ def build_home_tab_view(user_id):
         ]
         
         if not trips:
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "No active trips found. Use `/trip TripName` in a channel to create one!"
+            blocks.extend([
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "📭 *No active trips found*\n\nUse `/trip TripName` in a channel to create one!"
+                    }
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": "💡 Tip: Create trips in specific channels to organize carpools by destination or event"
+                        }
+                    ]
                 }
-            })
+            ])
         else:
-            for trip in trips:
+            for i, trip in enumerate(trips):
                 trip_name, channel_id, trip_creator = trip
                 
-                # Add trip header
+                # Add spacing between trips (except for first trip)
+                if i > 0:
+                    blocks.append({"type": "divider"})
+                
+                # Trip header with better formatting
                 blocks.append({
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*🎯 {trip_name}*"
+                        "text": f"🎯 *{trip_name.upper()}*"
                     }
                 })
                 
@@ -88,7 +103,7 @@ def build_home_tab_view(user_id):
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": "   _No cars created yet_"
+                            "text": "🚫 _No cars available yet_\n\nUse `/car CarName` in the channel to create one!"
                         }
                     })
                 else:
@@ -104,49 +119,48 @@ def build_home_tab_view(user_id):
                         """, (car_id,))
                         
                         members = cur.fetchall()
-                        member_list = []
                         
+                        # Build member display with better formatting
+                        member_display = []
                         for member in members:
                             username = get_username(member['user_id'])
                             if member['user_id'] == car_owner:
-                                member_list.append(f"👤 {username} (Owner)")
+                                member_display.append(f"👨‍✈️ *{username}*")
                             else:
-                                member_list.append(f"👤 {username}")
+                                member_display.append(f"👤 {username}")
                         
-                        # Add empty seat indicators
+                        # Add empty seat indicators with better styling
                         empty_seats = total_seats - filled_seats
-                        for _ in range(empty_seats):
-                            member_list.append("[ Empty ]")
+                        for i in range(empty_seats):
+                            member_display.append("💺 _Available_")
                         
+                        # Determine car status emoji
+                        if filled_seats == total_seats:
+                            status_emoji = "🔴"  # Full
+                        elif filled_seats == 0:
+                            status_emoji = "⚪"  # Empty
+                        else:
+                            status_emoji = "🟡"  # Partially filled
+                        
+                        # Car section with cleaner layout
                         blocks.append({
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"   🚗 *Car {car_id}: {car_name}* ({filled_seats}/{total_seats} seats)\n   {' | '.join(member_list)}"
+                                "text": f"{status_emoji} *{car_name}* • Car #{car_id}\n📊 *{filled_seats}/{total_seats} seats filled*\n\n{' • '.join(member_display)}"
                             }
                         })
                 
-                # Get users who need rides (not in any car for this trip)
-                cur.execute("""
-                    SELECT DISTINCT u.user_id
-                    FROM (
-                        -- This would ideally get channel members, but for now we'll skip
-                        -- the "need rides" section until we can properly get channel membership
-                        SELECT NULL as user_id WHERE FALSE
-                    ) u
-                """)
-                
+                # Add trip summary context
                 blocks.append({
                     "type": "context",
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": f"🔄 _Last updated: just now_"
+                            "text": f"🔄 _Updated just now_ • 📍 <#{channel_id}>"
                         }
                     ]
                 })
-                
-                blocks.append({"type": "divider"})
         
         # Add footer with helpful info
         blocks.append({
