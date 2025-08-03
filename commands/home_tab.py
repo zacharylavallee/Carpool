@@ -567,22 +567,86 @@ def register_home_tab_handlers(bolt_app):
                 client=client
             )
             
-            # Send the result message
-            client.chat_postEphemeral(
-                channel=user_id,
-                user=user_id,
-                text=message
-            )
+            # Show result in a modal response (not ephemeral message)
+            if success:
+                # Show success modal
+                client.views_open(
+                    trigger_id=body.get("trigger_id"),
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "✅ Success"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": message
+                                }
+                            }
+                        ]
+                    }
+                )
+            else:
+                # Show error modal
+                client.views_open(
+                    trigger_id=body.get("trigger_id"),
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "❌ Error"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": message
+                                }
+                            }
+                        ]
+                    }
+                )
             
             # Refresh the Home Tab
             update_home_tab_for_user(user_id)
             
         except Exception as e:
             print(f"Error processing filtered add submission: {e}")
-            client.chat_postEphemeral(
-                channel=user_id,
-                user=user_id,
-                text=f"❌ Error processing your request: {str(e)}"
+            # Show error modal for exceptions
+            client.views_open(
+                trigger_id=body.get("trigger_id"),
+                view={
+                    "type": "modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": "❌ Error"
+                    },
+                    "close": {
+                        "type": "plain_text",
+                        "text": "Close"
+                    },
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"❌ Error processing your request: {str(e)}"
+                            }
+                        }
+                    ]
+                }
             )
     
     @bolt_app.view(re.compile(r"filtered_boot_\d+"))
@@ -601,10 +665,29 @@ def register_home_tab_handlers(bolt_app):
             selected_options = body["view"]["state"]["values"]["user_selection"]["selected_users"]["selected_options"]
             
             if not selected_options:
-                client.chat_postEphemeral(
-                    channel=user_id,
-                    user=user_id,
-                    text="❌ Please select at least one user to remove."
+                # Show error modal for no selection
+                client.views_open(
+                    trigger_id=body.get("trigger_id"),
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "❌ Error"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "❌ Please select at least one user to remove."
+                                }
+                            }
+                        ]
+                    }
                 )
                 return
             
@@ -643,22 +726,86 @@ def register_home_tab_handlers(bolt_app):
                 client=client
             )
             
-            # Send the result message
-            client.chat_postEphemeral(
-                channel=user_id,
-                user=user_id,
-                text=message
-            )
+            # Show result in a modal response (not ephemeral message)
+            if success:
+                # Show success modal
+                client.views_open(
+                    trigger_id=body.get("trigger_id"),
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "✅ Success"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": message
+                                }
+                            }
+                        ]
+                    }
+                )
+            else:
+                # Show error modal
+                client.views_open(
+                    trigger_id=body.get("trigger_id"),
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "❌ Error"
+                        },
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": message
+                                }
+                            }
+                        ]
+                    }
+                )
             
             # Refresh the Home Tab
             update_home_tab_for_user(user_id)
             
         except Exception as e:
             print(f"Error processing filtered boot submission: {e}")
-            client.chat_postEphemeral(
-                channel=user_id,
-                user=user_id,
-                text=f"❌ Error processing your request: {str(e)}"
+            # Show error modal for exceptions
+            client.views_open(
+                trigger_id=body.get("trigger_id"),
+                view={
+                    "type": "modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": "❌ Error"
+                    },
+                    "close": {
+                        "type": "plain_text",
+                        "text": "Close"
+                    },
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"❌ Error processing your request: {str(e)}"
+                            }
+                        }
+                    ]
+                }
             )
     
     @bolt_app.view(re.compile(r"simple_add_\d+"))
