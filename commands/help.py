@@ -24,6 +24,7 @@ def register_help_commands(bolt_app):
             "`/list` – list cars on the active trip\n"
             "`/info` – show all trips & car details\n"
             "`/in @car_owner` – request to join someone's car\n"
+            "`/cancel` – cancel your pending join request\n"
             "`/out` – leave your current car\n"
             "`/update seats` – update your car's seat count\n"
             "`/add @user1 @user2` – add users to your car\n"

@@ -10,6 +10,55 @@ def eph(respond, text):
     """Send ephemeral response"""
     respond(text, response_type="ephemeral")
 
+def auto_dismiss_eph(respond, text, button_text="Got it"):
+    """Send auto-dismissing ephemeral response with dismiss button"""
+    respond({
+        "response_type": "ephemeral",
+        "text": text,
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": text}
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": button_text},
+                        "action_id": "dismiss_message",
+                        "style": "primary"
+                    }
+                ]
+            }
+        ]
+    })
+
+def auto_dismiss_eph_with_actions(respond, text, actions):
+    """Send auto-dismissing ephemeral response with custom action buttons"""
+    # Add dismiss button to the actions
+    dismiss_button = {
+        "type": "button",
+        "text": {"type": "plain_text", "text": "Dismiss"},
+        "action_id": "dismiss_message"
+    }
+    actions.append(dismiss_button)
+    
+    respond({
+        "response_type": "ephemeral",
+        "text": text,
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": text}
+            },
+            {
+                "type": "actions",
+                "elements": actions
+            }
+        ]
+    })
+
 def get_channel_members(channel_id: str):
     """Get all human members of a channel (excluding bots)"""
     from app import bolt_app  # Import here to avoid circular imports

@@ -4,7 +4,7 @@ Member management commands for the carpool bot
 import psycopg2
 import psycopg2.extras
 from config.database import get_conn
-from utils.helpers import eph, post_announce, get_channel_members
+from utils.helpers import eph, auto_dismiss_eph, auto_dismiss_eph_with_actions, get_channel_members, get_active_trip, post_announce, get_username
 from utils.channel_guard import check_bot_channel_access
 
 def register_member_commands(bolt_app):
@@ -386,6 +386,13 @@ def register_member_commands(bolt_app):
             client.chat_postMessage(channel=user_to_add, text=f":white_check_mark: You were approved for *{car_name}* on *{trip}*!")
             post_announce(trip, channel_id, f":seat: <@{user_to_add}> joined car `{car_id}` (*{car_name}*) on *{trip}*.")
 
+    @bolt_app.action("dismiss_message")
+    def act_dismiss(ack, respond):
+        """Handle dismiss button clicks for auto-dismissing messages"""
+        ack()
+        # Delete the original message
+        respond({"delete_original": True})
+
     @bolt_app.action("deny_request")
     def act_deny(ack, body, client):
         ack()
@@ -500,7 +507,7 @@ def register_member_commands(bolt_app):
             pending_request = cur.fetchone()
             
             if not pending_request:
-                return eph(respond, ":x: You don't have any pending join requests to cancel.")
+                return auto_dismiss_eph(respond, ":x: You don't have any pending join requests to cancel.")
             
             car_id, car_name, car_owner = pending_request
             
@@ -508,7 +515,7 @@ def register_member_commands(bolt_app):
             cur.execute("DELETE FROM join_requests WHERE car_id=%s AND user_id=%s", (car_id, user))
             conn.commit()
         
-        eph(respond, f":white_check_mark: Cancelled your request to join *{car_name}* (owned by <@{car_owner}>) on *{trip}*.")
+        auto_dismiss_eph(respond, f":white_check_mark: Cancelled your request to join *{car_name}* (owned by <@{car_owner}>) on *{trip}*.", "Done")
 
     @bolt_app.command("/out")
     def cmd_out(ack, respond, command):
