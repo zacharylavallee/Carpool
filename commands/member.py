@@ -13,9 +13,9 @@ def add_users_to_car(car_id, channel_id, user_id, target_user_ids, client=None):
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             
-            # Get car and trip info
+            # Get car and trip info including seat capacity
             cur.execute(
-                "SELECT name, trip, created_by FROM cars WHERE id=%s AND channel_id=%s",
+                "SELECT name, trip, created_by, seats FROM cars WHERE id=%s AND channel_id=%s",
                 (car_id, channel_id)
             )
             car_info = cur.fetchone()
@@ -23,11 +23,26 @@ def add_users_to_car(car_id, channel_id, user_id, target_user_ids, client=None):
             if not car_info:
                 return False, "❌ Car not found.", []
             
-            car_name, trip, car_owner = car_info
+            car_name, trip, car_owner, total_seats = car_info
             
             # Check if user has permission to add to this car
             if user_id != car_owner:
                 return False, "❌ Only the car owner can add people to their car.", []
+            
+            # Get current number of people in the car (including owner)
+            cur.execute(
+                "SELECT COUNT(*) FROM car_members WHERE car_id=%s",
+                (car_id,)
+            )
+            current_members = cur.fetchone()[0] + 1  # +1 for the owner who isn't in car_members table
+            
+            # Check if adding these users would exceed seat capacity
+            available_seats = total_seats - current_members
+            if len(target_user_ids) > available_seats:
+                if available_seats <= 0:
+                    return False, f"❌ Car is full ({current_members}/{total_seats} seats). Cannot add more people.", []
+                else:
+                    return False, f"❌ Not enough seats available. Car has {available_seats} seat(s) remaining, but you're trying to add {len(target_user_ids)} people.", []
             
             # Check conflicts and add users
             users_to_add = []
