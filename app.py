@@ -103,3 +103,10 @@ def index():
 
 if __name__ == "__main__":
     flask_app.run(port=3000)
+
+# Debug registered listeners
+print("\n🔍 REGISTERED LISTENERS:")
+print("======================")
+for listener in bolt_app.listeners:
+    print(f"- {listener}")
+print("======================\n")

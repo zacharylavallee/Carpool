@@ -442,7 +442,7 @@ def register_home_tab_handlers(bolt_app):
                 channel_id = car_info['channel_id']
             
             # Import and call the existing /add command logic
-            from commands.member import register_member_commands
+            from commands.member import cmd_add
             
             # Create a mock command object like slash commands use
             class MockCommand:
@@ -467,16 +467,15 @@ def register_home_tab_handlers(bolt_app):
                     text=text
                 )
             
-            # Call the existing /add command logic
-            mock_command = MockCommand(user_input, user_id, channel_id)
+            # Format the command text to include the car_id
+            command_text = f"{car_id} {user_input}"
+            print(f"🔍 DEBUG: Calling cmd_add with text: {command_text}")
             
-            # We need to access the cmd_add function directly
-            # For now, let's send a helpful message and refresh the Home Tab
-            client.chat_postEphemeral(
-                channel=user_id,
-                user=user_id,
-                text=f"🔄 Processing add request: `{user_input}`\n\nPlease use `/add {user_input}` in <#{channel_id}> for now. Full Home Tab integration coming soon!"
-            )
+            # Create the mock command
+            mock_command = MockCommand(command_text, user_id, channel_id)
+            
+            # Execute the add command directly
+            cmd_add(lambda: None, mock_respond, mock_command)
             
             # Refresh the Home Tab
             update_home_tab_for_user(user_id)
@@ -486,7 +485,7 @@ def register_home_tab_handlers(bolt_app):
             client.chat_postEphemeral(
                 channel=user_id,
                 user=user_id,
-                text="❌ Error processing your request. Please try again."
+                text=f"❌ Error processing your request: {str(e)}"
             )
     
     @bolt_app.view(re.compile(r"simple_boot_\d+"))
@@ -528,12 +527,41 @@ def register_home_tab_handlers(bolt_app):
                 
                 channel_id = car_info['channel_id']
             
-            # For now, provide guidance to use the slash command
-            client.chat_postEphemeral(
-                channel=user_id,
-                user=user_id,
-                text=f"🔄 Processing boot request: `{user_input}`\n\nPlease use `/boot {user_input}` in <#{channel_id}> for now. Full Home Tab integration coming soon!"
-            )
+            # Import and call the existing /boot command logic
+            from commands.member import cmd_boot
+            
+            # Create a mock command object like slash commands use
+            class MockCommand:
+                def __init__(self, text, user_id, channel_id):
+                    self.data = {
+                        "text": text,
+                        "user_id": user_id,
+                        "channel_id": channel_id
+                    }
+                
+                def get(self, key):
+                    return self.data.get(key)
+                
+                def __getitem__(self, key):
+                    return self.data[key]
+            
+            # Create a mock respond function that sends ephemeral messages
+            def mock_respond(text):
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text=text
+                )
+            
+            # Format the command text to include the car_id
+            command_text = f"{car_id} {user_input}"
+            print(f"🔍 DEBUG: Calling cmd_boot with text: {command_text}")
+            
+            # Create the mock command
+            mock_command = MockCommand(command_text, user_id, channel_id)
+            
+            # Execute the boot command directly
+            cmd_boot(lambda: None, mock_respond, mock_command)
             
             # Refresh the Home Tab
             update_home_tab_for_user(user_id)
@@ -543,7 +571,7 @@ def register_home_tab_handlers(bolt_app):
             client.chat_postEphemeral(
                 channel=user_id,
                 user=user_id,
-                text="❌ Error processing your request. Please try again."
+                text=f"❌ Error processing your request: {str(e)}"
             )
     
     @bolt_app.view(re.compile(r"boot_members_from_car_\d+"))
