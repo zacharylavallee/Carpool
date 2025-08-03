@@ -34,10 +34,14 @@ def add_users_to_car(car_id, channel_id, user_id, target_user_ids, client=None):
                 "SELECT COUNT(*) FROM car_members WHERE car_id=%s",
                 (car_id,)
             )
-            current_members = cur.fetchone()[0] + 1  # +1 for the owner who isn't in car_members table
+            current_passengers = cur.fetchone()[0]  # Number of passengers (not including owner)
+            current_members = current_passengers + 1  # +1 for the owner
             
             # Check if adding these users would exceed seat capacity
             available_seats = total_seats - current_members
+            
+            print(f"🔍 DEBUG: Car {car_id} - Total seats: {total_seats}, Current members: {current_members}, Available: {available_seats}, Trying to add: {len(target_user_ids)}")
+            
             if len(target_user_ids) > available_seats:
                 if available_seats <= 0:
                     return False, f"❌ Car is full ({current_members}/{total_seats} seats). Cannot add more people.", []
