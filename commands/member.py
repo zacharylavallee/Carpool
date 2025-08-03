@@ -108,13 +108,7 @@ def add_users_to_car(car_id, channel_id, user_id, target_user_ids, client=None):
                         except Exception as e:
                             print(f"⚠️ add_users_to_car failed to send DM to {target_user}: {e}")
                 
-                # Post announcement
-                if len(added_users) == 1:
-                    announcement = f":seat: <@{user_id}> added <@{added_users[0]}> to *{car_name}* on *{trip}*."
-                else:
-                    announcement = f":seat: <@{user_id}> added {', '.join(added_mentions)} to *{car_name}* on *{trip}*."
-                
-                post_announce(trip, channel_id, announcement)
+                # No channel announcements - only DMs and ephemeral messages per user preference
                 
                 return True, success_msg, added_users
             else:
@@ -216,13 +210,7 @@ def boot_users_from_car(car_id, channel_id, user_id, target_user_ids, client=Non
                         except Exception as e:
                             print(f"⚠️ boot_users_from_car failed to send DM to {target_user}: {e}")
                 
-                # Post announcement
-                if len(booted_users) == 1:
-                    announcement = f":seat: <@{user_id}> removed <@{booted_users[0]}> from *{car_name}* on *{trip}*."
-                else:
-                    announcement = f":seat: <@{user_id}> removed {', '.join(booted_mentions)} from *{car_name}* on *{trip}*."
-                
-                post_announce(trip, channel_id, announcement)
+                # No channel announcements - only DMs and ephemeral messages per user preference
                 
                 return True, success_msg, booted_users
             else:
