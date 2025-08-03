@@ -75,11 +75,11 @@ handler = SlackRequestHandler(bolt_app)
 @flask_app.route("/slack/events", methods=["POST"])
 def slack_events():
     try:
-        # Handle URL verification challenge
-        if request.json and request.json.get("type") == "url_verification":
+        # Handle URL verification challenge (JSON content)
+        if request.content_type == 'application/json' and request.json and request.json.get("type") == "url_verification":
             return request.json.get("challenge")
         
-        # Handle normal Slack events
+        # Handle normal Slack events and slash commands
         return handler.handle(request)
     except Exception as e:
         print(f"Error in slack_events: {e}")
