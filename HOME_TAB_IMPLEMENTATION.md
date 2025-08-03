@@ -58,11 +58,16 @@ Replace public channel notifications with a private, real-time dashboard showing
 4. Turn on **"Home Tab"**
 5. Check **"Show Tab"** option
 
-### 2. Add Required Scopes
-1. Go to **"OAuth & Permissions"**
-2. Add these **Bot Token Scopes**:
-   - `app_home:read` - To display the home tab
-   - `users:read` - To get user information (already added)
+### 2. Verify Existing Scopes (No Changes Needed)
+You already have all the required scopes:
+- ✅ `commands` - For slash commands
+- ✅ `chat:write` - To send messages
+- ✅ `users:read` - To get user information
+- ✅ `channels:read` - To read channel info
+- ✅ `groups:read` - To read private channel info
+- ✅ `im:write` - To send direct messages
+
+**No new scopes need to be added!**
 
 ### 3. Enable Event Subscriptions
 1. Go to **"Event Subscriptions"**
