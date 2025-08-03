@@ -216,8 +216,7 @@ def register_manage_commands(bolt_app):
         except Exception:
             respond(f":white_check_mark: Your car (*{car_name}*) has been deleted.")
         
-        # Post announcement
-        post_announce(trip, channel_id, f":wastebasket: <@{user}> deleted their car (*{car_name}*) on *{trip}*.")
+        # Removed public announcement - keep channel focused on conversation
 
         # Notify all members
         with get_conn() as conn:
@@ -297,8 +296,7 @@ def register_manage_commands(bolt_app):
         except Exception:
             respond(feedback)
         
-        # Post announcement
-        post_announce(trip, channel_id, f":gear: <@{user}> updated their car (*{car_name}*) to {new_seats} seats on *{trip}*.")
+        # Removed public announcement - keep channel focused on conversation
 
     @bolt_app.action("cancel_update_car")
     def handle_cancel_update_car(ack, body, client, respond):

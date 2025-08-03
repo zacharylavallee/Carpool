@@ -4,7 +4,7 @@ Car management commands for the carpool bot
 import psycopg2
 import psycopg2.extras
 from config.database import get_conn
-from utils.helpers import eph, get_active_trip, post_announce, get_username, get_next_available_car_id
+from utils.helpers import eph, auto_dismiss_eph, get_active_trip, post_announce, get_username, get_next_available_car_id
 from utils.channel_guard import check_bot_channel_access
 
 def register_car_commands(bolt_app):
@@ -55,8 +55,7 @@ def register_car_commands(bolt_app):
                 conn.commit()
             except psycopg2.errors.UniqueViolation:
                 return eph(respond, ":x: You already created a car on this trip in this channel.")
-        eph(respond, f":white_check_mark: You created *{name}* (ID `{car_id}`) with *{seats}* seats.")
-        post_announce(trip, channel_id, f":car: <@{user}> created *{name}* (ID `{car_id}`) on *{trip}*.")
+        auto_dismiss_eph(respond, f":white_check_mark: You created *{name}* (ID `{car_id}`) with *{seats}* seats.", "Done")
 
     @bolt_app.command("/list")
     def cmd_list(ack, respond, command):
