@@ -24,6 +24,71 @@ def register_home_tab_handlers(bolt_app):
             )
         except Exception as e:
             print(f"Error publishing home tab view: {e}")
+    
+    @bolt_app.action("manage_car_*")
+    def handle_manage_car(ack, body, client):
+        """Handle car management button clicks"""
+        ack()
+        
+        # Extract car ID from action_id
+        action_id = body["actions"][0]["action_id"]
+        car_id = action_id.replace("manage_car_", "")
+        user_id = body["user"]["id"]
+        
+        # For now, show a simple modal with car management options
+        try:
+            client.views_open(
+                trigger_id=body["trigger_id"],
+                view={
+                    "type": "modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": f"Manage Car #{car_id}"
+                    },
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"🚗 *Car Management*\n\nCar ID: #{car_id}\n\n_Interactive car management features coming soon!_\n\nFor now, use slash commands in the channel:"
+                            }
+                        },
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "• `/in` - Join this car\n• `/out` - Leave this car\n• `/car [name]` - Create a new car"
+                            }
+                        }
+                    ],
+                    "close": {
+                        "type": "plain_text",
+                        "text": "Close"
+                    }
+                }
+            )
+        except Exception as e:
+            print(f"Error opening car management modal: {e}")
+    
+    @bolt_app.action("view_channel_*")
+    def handle_view_channel(ack, body, client):
+        """Handle channel button clicks"""
+        ack()
+        
+        # Extract channel ID from action_id
+        action_id = body["actions"][0]["action_id"]
+        channel_id = action_id.replace("view_channel_", "")
+        user_id = body["user"]["id"]
+        
+        # Send a message to guide user to the channel
+        try:
+            client.chat_postEphemeral(
+                channel=user_id,  # Send as DM
+                user=user_id,
+                text=f"🎯 To manage this trip, go to <#{channel_id}> and use slash commands like `/car`, `/in`, `/out`, etc."
+            )
+        except Exception as e:
+            print(f"Error sending channel guidance message: {e}")
 
 def build_home_tab_view(user_id):
     """Build the home tab dashboard view for a specific user"""
@@ -56,7 +121,7 @@ def build_home_tab_view(user_id):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": ":inbox_tray: *No Active Trips*\n\nGet started by creating a trip in any channel!"
+                        "text": "📭 *No Active Trips*\n\nGet started by creating a trip in any channel!"
                     }
                 },
                 {
@@ -64,7 +129,7 @@ def build_home_tab_view(user_id):
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": ":bulb: Use `/trip [name]` in a channel to create your first carpool"
+                            "text": "💡 Use `/trip [name]` in a channel to create your first carpool"
                         }
                     ]
                 }
@@ -89,18 +154,26 @@ def build_home_tab_view(user_id):
                         }
                     ])
                 
+                # Get channel name for display
+                try:
+                    from app import bolt_app
+                    channel_info = bolt_app.client.conversations_info(channel=channel_id)
+                    channel_name = channel_info['channel']['name']
+                except:
+                    channel_name = channel_id[-8:]  # Fallback to ID suffix
+                
                 # Trip header section with channel info
                 blocks.append({
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f":dart: *{trip_name.upper()}*"
+                        "text": f"🎯 *{trip_name.upper()}*"
                     },
                     "accessory": {
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": f"#{channel_id[-8:]}"
+                            "text": f"#{channel_name}"
                         },
                         "action_id": f"view_channel_{channel_id}",
                         "style": "primary"
@@ -126,7 +199,7 @@ def build_home_tab_view(user_id):
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": ":warning: *No cars created*\nUse `/car [name]` to add the first car"
+                            "text": "⚠️ *No cars created*\nUse `/car [name]` to add the first car"
                         }
                     })
                 else:
@@ -158,25 +231,25 @@ def build_home_tab_view(user_id):
                         # Create visual seat representation
                         seat_display = []
                         if owner_name:
-                            seat_display.append(f":bust_in_silhouette: *{owner_name}* (Driver)")
+                            seat_display.append(f"👤 *{owner_name}* (Driver)")
                         
                         for passenger in passengers:
-                            seat_display.append(f":bust_in_silhouette: {passenger}")
+                            seat_display.append(f"👤 {passenger}")
                         
                         # Add empty seats
                         empty_seats = total_seats - filled_seats
                         for _ in range(empty_seats):
-                            seat_display.append(":seat: _Open_")
+                            seat_display.append("💺 _Open_")
                         
                         # Determine status and color
                         if filled_seats == total_seats:
-                            status = ":red_circle: *FULL*"
+                            status = "🔴 *FULL*"
                             style = "danger"
                         elif filled_seats == 0:
-                            status = ":white_circle: *EMPTY*"
+                            status = "⚪ *EMPTY*"
                             style = "primary"
                         else:
-                            status = ":yellow_circle: *AVAILABLE*"
+                            status = "🟡 *AVAILABLE*"
                             style = "primary"
                         
                         # Car card layout
@@ -184,7 +257,7 @@ def build_home_tab_view(user_id):
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f":car: *{car_name}* (Car #{car_id})\n{status} `{filled_seats}/{total_seats} seats`\n\n{chr(10).join(seat_display)}"
+                                "text": f"🚗 *{car_name}* (Car #{car_id})\n{status} `{filled_seats}/{total_seats} seats`\n\n{chr(10).join(seat_display)}"
                             },
                             "accessory": {
                                 "type": "button",
@@ -215,7 +288,7 @@ def build_home_tab_view(user_id):
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": f":arrows_counterclockwise: _Last updated: just now_ \u2022 :round_pushpin: <#{channel_id}>"
+                            "text": f"🔄 _Last updated: just now_ • 📍 <#{channel_id}>"
                         }
                     ]
                 })
