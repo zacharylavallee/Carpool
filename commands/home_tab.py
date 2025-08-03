@@ -137,11 +137,13 @@ def register_home_tab_handlers(bolt_app):
     def handle_car_actions(ack, body, client):
         """Handle car action dropdown selections"""
         ack()
+        print(f"🔍 DEBUG: Car action triggered - body: {body}")
         
         # Extract action details
         selected_option = body["actions"][0]["selected_option"]
         action_value = selected_option["value"]
         user_id = body["user"]["id"]
+        print(f"🔍 DEBUG: Action value: {action_value}, User: {user_id}")
         
         # Parse action type and car ID
         if "_car_" in action_value:
@@ -205,8 +207,10 @@ def register_home_tab_handlers(bolt_app):
                 )
             
             elif action_type == "add":
-                # Get available channel members for this trip
+                print(f"🔍 DEBUG: Add action triggered for car {car_id}")
+                # Get available channel members
                 available_members = get_available_channel_members(car_id)
+                print(f"🔍 DEBUG: Found {len(available_members)} available members")
                 
                 if not available_members:
                     # No available members
@@ -465,6 +469,7 @@ def register_home_tab_handlers(bolt_app):
     def handle_add_members_submission(ack, body, client):
         """Handle add members modal submission"""
         ack()
+        print(f"🔍 DEBUG: Add members modal submitted - callback_id: {body['view']['callback_id']}")
         
         # Extract car ID from callback_id
         callback_id = body["view"]["callback_id"]
@@ -609,6 +614,7 @@ def register_home_tab_handlers(bolt_app):
     def handle_confirm_add(ack, body, client):
         """Handle add confirmation and execute the database operation"""
         ack()
+        print(f"🔍 DEBUG: Confirm add triggered - callback_id: {body['view']['callback_id']}")
         
         # Parse callback_id to get car_id and member_ids
         callback_id = body["view"]["callback_id"]
