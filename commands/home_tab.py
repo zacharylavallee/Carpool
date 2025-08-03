@@ -59,70 +59,183 @@ def register_home_tab_handlers(bolt_app):
         except Exception as e:
             print(f"Error publishing home tab view: {e}")
     
-    @bolt_app.action("manage_car_*")
-    def handle_manage_car(ack, body, client):
-        """Handle car management button clicks"""
+    @bolt_app.action("car_actions_*")
+    def handle_car_actions(ack, body, client):
+        """Handle car action dropdown selections"""
         ack()
         
-        # Extract car ID from action_id
-        action_id = body["actions"][0]["action_id"]
-        car_id = action_id.replace("manage_car_", "")
+        # Extract action details
+        selected_option = body["actions"][0]["selected_option"]
+        action_value = selected_option["value"]
         user_id = body["user"]["id"]
         
-        # For now, show a simple modal with car management options
+        # Parse action type and car ID
+        if "_car_" in action_value:
+            action_type = action_value.split("_car_")[0]
+            car_id = action_value.split("_car_")[1]
+        else:
+            print(f"Invalid action value: {action_value}")
+            return
+        
         try:
-            client.views_open(
-                trigger_id=body["trigger_id"],
-                view={
-                    "type": "modal",
-                    "title": {
-                        "type": "plain_text",
-                        "text": f"Manage Car #{car_id}"
-                    },
-                    "blocks": [
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": f"🚗 *Car Management*\n\nCar ID: #{car_id}\n\n_Interactive car management features coming soon!_\n\nFor now, use slash commands in the channel:"
-                            }
+            if action_type == "join":
+                # Show join confirmation modal
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": f"Join Car #{car_id}"
                         },
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": "• `/in` - Join this car\n• `/out` - Leave this car\n• `/car [name]` - Create a new car"
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"🚗 *Join Car #{car_id}*\n\n_Interactive join functionality coming soon!_\n\nFor now, go to the channel and use `/in {car_id}` to join this car."
+                                }
                             }
+                        ],
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
                         }
-                    ],
-                    "close": {
-                        "type": "plain_text",
-                        "text": "Close"
                     }
-                }
-            )
+                )
+            
+            elif action_type == "leave":
+                # Show leave confirmation modal
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "Leave Car"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"💪 *Leave Car #{car_id}*\n\n_Interactive leave functionality coming soon!_\n\nFor now, go to the channel and use `/out` to leave this car."
+                                }
+                            }
+                        ],
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        }
+                    }
+                )
+            
+            elif action_type == "add":
+                # Show add person modal
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "Add Someone"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"👥 *Add Someone to Car #{car_id}*\n\n_Interactive add functionality coming soon!_\n\nFor now, ask them to go to the channel and use `/in {car_id}` to join."
+                                }
+                            }
+                        ],
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        }
+                    }
+                )
+            
+            elif action_type == "boot":
+                # Show boot person modal
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "Boot Someone"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"👎 *Boot Someone from Car #{car_id}*\n\n_Interactive boot functionality coming soon!_\n\nFor now, go to the channel and use `/boot @username` to remove someone."
+                                }
+                            }
+                        ],
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        }
+                    }
+                )
+            
+            elif action_type == "delete":
+                # Show delete car confirmation modal
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": "Delete Car"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"🗑️ *Delete Car #{car_id}*\n\n⚠️ This will remove the car and all its passengers.\n\n_Interactive delete functionality coming soon!_\n\nFor now, go to the channel and use `/cancel {car_id}` to delete this car."
+                                }
+                            }
+                        ],
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        }
+                    }
+                )
+            
+            elif action_type == "view":
+                # Show car details modal
+                client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view={
+                        "type": "modal",
+                        "title": {
+                            "type": "plain_text",
+                            "text": f"Car #{car_id} Details"
+                        },
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"📝 *Car #{car_id} Details*\n\n_Detailed car information coming soon!_\n\nThis will show car details, passenger list, and trip information."
+                                }
+                            }
+                        ],
+                        "close": {
+                            "type": "plain_text",
+                            "text": "Close"
+                        }
+                    }
+                )
+            
         except Exception as e:
-            print(f"Error opening car management modal: {e}")
-    
-    @bolt_app.action("view_channel_*")
-    def handle_view_channel(ack, body, client):
-        """Handle channel button clicks"""
-        ack()
-        
-        # Extract channel ID from action_id
-        action_id = body["actions"][0]["action_id"]
-        channel_id = action_id.replace("view_channel_", "")
-        user_id = body["user"]["id"]
-        
-        # Send a message to guide user to the channel
-        try:
-            client.chat_postEphemeral(
-                channel=user_id,  # Send as DM
-                user=user_id,
-                text=f"🎯 To manage this trip, go to <#{channel_id}> and use slash commands like `/car`, `/in`, `/out`, etc."
-            )
-        except Exception as e:
-            print(f"Error sending channel guidance message: {e}")
+            print(f"Error handling car action {action_type}: {e}")
 
 def build_home_tab_view(user_id):
     """Build the home tab dashboard view for a specific user"""
@@ -196,21 +309,12 @@ def build_home_tab_view(user_id):
                 except:
                     channel_name = channel_id[-8:]  # Fallback to ID suffix
                 
-                # Trip header section with channel info
+                # Trip header section (no channel button)
                 blocks.append({
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"🎯 *{trip_name.upper()}*"
-                    },
-                    "accessory": {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": f"#{channel_name}"
-                        },
-                        "action_id": f"view_channel_{channel_id}",
-                        "style": "primary"
+                        "text": f"🎯 *{trip_name.upper()}* • #{channel_name}"
                     }
                 })
                 
@@ -278,22 +382,91 @@ def build_home_tab_view(user_id):
                             status = "🟡 *AVAILABLE*"
                             style = "primary"
                         
-                        # Car card layout with virtual car visualization
+                        # Determine user's relationship to this car
+                        user_in_car = any(member['user_id'] == user_id for member in members)
+                        is_car_owner = car_owner == user_id
+                        car_is_full = filled_seats >= total_seats
+                        
+                        # Build user-specific dropdown options
+                        dropdown_options = []
+                        
+                        if is_car_owner:
+                            # Car owner options
+                            dropdown_options.extend([
+                                {
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "👥 Add Someone"
+                                    },
+                                    "value": f"add_to_car_{car_id}"
+                                },
+                                {
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "👎 Boot Someone"
+                                    },
+                                    "value": f"boot_from_car_{car_id}"
+                                },
+                                {
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "🗑️ Delete Car"
+                                    },
+                                    "value": f"delete_car_{car_id}"
+                                }
+                            ])
+                            if user_in_car:
+                                dropdown_options.append({
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "💪 Leave Car"
+                                    },
+                                    "value": f"leave_car_{car_id}"
+                                })
+                        elif user_in_car:
+                            # User is in car but not owner
+                            dropdown_options.append({
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "💪 Leave Car"
+                                },
+                                "value": f"leave_car_{car_id}"
+                            })
+                        elif not car_is_full:
+                            # User not in car and car has space
+                            dropdown_options.append({
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": "🚗 Join Car"
+                                },
+                                "value": f"join_car_{car_id}"
+                            })
+                        
+                        # Add view info option for everyone
+                        dropdown_options.append({
+                            "text": {
+                                "type": "plain_text",
+                                "text": "📝 View Details"
+                            },
+                            "value": f"view_car_{car_id}"
+                        })
+                        
+                        # Car card layout with user-specific dropdown
+                        accessory = None
+                        if dropdown_options:
+                            accessory = {
+                                "type": "overflow",
+                                "options": dropdown_options,
+                                "action_id": f"car_actions_{car_id}"
+                            }
+                        
                         blocks.append({
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
                                 "text": f"🚗 *{car_name}* (Car #{car_id})\n{status} `{filled_seats}/{total_seats} seats`\n\n```\n{car_visual}\n```"
                             },
-                            "accessory": {
-                                "type": "button",
-                                "text": {
-                                    "type": "plain_text",
-                                    "text": "Manage"
-                                },
-                                "action_id": f"manage_car_{car_id}",
-                                "style": style
-                            }
+                            "accessory": accessory
                         })
                         
                         # Add subtle spacing between cars
