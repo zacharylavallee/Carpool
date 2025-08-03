@@ -6,6 +6,79 @@ import psycopg2.extras
 from config.database import get_conn
 from utils.helpers import get_username
 
+def get_available_channel_members(car_id):
+    """Get channel members who are not in any car for this trip"""
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Get car info to find the trip and channel
+        cur.execute("""
+            SELECT trip, channel_id FROM cars WHERE id = %s
+        """, (car_id,))
+        
+        car_info = cur.fetchone()
+        if not car_info:
+            return []
+        
+        trip_name, channel_id = car_info
+        
+        try:
+            # Get channel members from Slack API
+            from app import bolt_app
+            channel_members = bolt_app.client.conversations_members(channel=channel_id)
+            all_member_ids = channel_members['members']
+            
+            # Get members already in cars for this trip
+            cur.execute("""
+                SELECT DISTINCT cm.user_id
+                FROM car_members cm
+                JOIN cars c ON cm.car_id = c.id
+                WHERE c.trip = %s AND c.channel_id = %s
+            """, (trip_name, channel_id))
+            
+            members_in_cars = {row['user_id'] for row in cur.fetchall()}
+            
+            # Filter to available members only
+            available_members = []
+            for member_id in all_member_ids:
+                if member_id not in members_in_cars:
+                    # Skip bots
+                    try:
+                        user_info = bolt_app.client.users_info(user=member_id)
+                        if not user_info['user']['is_bot']:
+                            username = get_username(member_id)
+                            available_members.append((member_id, username))
+                    except:
+                        continue
+            
+            return available_members
+            
+        except Exception as e:
+            print(f"Error getting channel members: {e}")
+            return []
+
+def get_car_members_for_boot(car_id, owner_id):
+    """Get current car members excluding the owner"""
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Get car members excluding the owner
+        cur.execute("""
+            SELECT cm.user_id
+            FROM car_members cm
+            WHERE cm.car_id = %s AND cm.user_id != %s
+            ORDER BY cm.user_id
+        """, (car_id, owner_id))
+        
+        members = cur.fetchall()
+        member_list = []
+        
+        for member in members:
+            username = get_username(member['user_id'])
+            member_list.append((member['user_id'], username))
+        
+        return member_list
+
 def build_car_visualization(driver_name, passengers, total_seats):
     """Build a top-down car visualization with seats arranged in standard layout"""
     
@@ -131,56 +204,164 @@ def register_home_tab_handlers(bolt_app):
                 )
             
             elif action_type == "add":
-                # Show add person modal
-                client.views_open(
-                    trigger_id=body["trigger_id"],
-                    view={
-                        "type": "modal",
-                        "title": {
-                            "type": "plain_text",
-                            "text": "Add Someone"
-                        },
-                        "blocks": [
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f"👥 *Add Someone to Car #{car_id}*\n\n_Interactive add functionality coming soon!_\n\nFor now, ask them to go to the channel and use `/in {car_id}` to join."
+                # Get available channel members for this trip
+                available_members = get_available_channel_members(car_id)
+                
+                if not available_members:
+                    # No available members
+                    client.views_open(
+                        trigger_id=body["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Add Someone"
+                            },
+                            "blocks": [
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": f"👥 *Add Someone to Car #{car_id}*\n\n🚫 No available members found.\n\nEveryone in this channel is already in a car for this trip."
+                                    }
                                 }
+                            ],
+                            "close": {
+                                "type": "plain_text",
+                                "text": "Close"
                             }
-                        ],
-                        "close": {
-                            "type": "plain_text",
-                            "text": "Close"
                         }
-                    }
-                )
+                    )
+                else:
+                    # Show multi-select modal with available members
+                    member_options = []
+                    for member_id, member_name in available_members:
+                        member_options.append({
+                            "text": {
+                                "type": "plain_text",
+                                "text": member_name
+                            },
+                            "value": member_id
+                        })
+                    
+                    client.views_open(
+                        trigger_id=body["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Add Someone"
+                            },
+                            "submit": {
+                                "type": "plain_text",
+                                "text": "Add Selected"
+                            },
+                            "close": {
+                                "type": "plain_text",
+                                "text": "Cancel"
+                            },
+                            "callback_id": f"add_members_to_car_{car_id}",
+                            "blocks": [
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": f"👥 *Add People to Car #{car_id}*\n\nSelect who you'd like to add:"
+                                    }
+                                },
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": "Available members:"
+                                    },
+                                    "accessory": {
+                                        "type": "multi_users_select",
+                                        "placeholder": {
+                                            "type": "plain_text",
+                                            "text": "Select people to add"
+                                        },
+                                        "action_id": "selected_members"
+                                    }
+                                }
+                            ]
+                        }
+                    )
             
             elif action_type == "boot":
-                # Show boot person modal
-                client.views_open(
-                    trigger_id=body["trigger_id"],
-                    view={
-                        "type": "modal",
-                        "title": {
-                            "type": "plain_text",
-                            "text": "Boot Someone"
-                        },
-                        "blocks": [
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f"👎 *Boot Someone from Car #{car_id}*\n\n_Interactive boot functionality coming soon!_\n\nFor now, go to the channel and use `/boot @username` to remove someone."
+                # Get current car members (excluding owner)
+                car_members = get_car_members_for_boot(car_id, user_id)
+                
+                if not car_members:
+                    # No members to boot
+                    client.views_open(
+                        trigger_id=body["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Boot Someone"
+                            },
+                            "blocks": [
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": f"👎 *Boot Someone from Car #{car_id}*\n\n🚫 No passengers to remove.\n\nYou're the only one in this car."
+                                    }
                                 }
+                            ],
+                            "close": {
+                                "type": "plain_text",
+                                "text": "Close"
                             }
-                        ],
-                        "close": {
-                            "type": "plain_text",
-                            "text": "Close"
                         }
-                    }
-                )
+                    )
+                else:
+                    # Show multi-select modal with current members
+                    client.views_open(
+                        trigger_id=body["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Boot Someone"
+                            },
+                            "submit": {
+                                "type": "plain_text",
+                                "text": "Remove Selected"
+                            },
+                            "close": {
+                                "type": "plain_text",
+                                "text": "Cancel"
+                            },
+                            "callback_id": f"boot_members_from_car_{car_id}",
+                            "blocks": [
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": f"👎 *Remove People from Car #{car_id}*\n\nSelect who you'd like to remove:"
+                                    }
+                                },
+                                {
+                                    "type": "section",
+                                    "text": {
+                                        "type": "mrkdwn",
+                                        "text": "Current passengers:"
+                                    },
+                                    "accessory": {
+                                        "type": "multi_users_select",
+                                        "placeholder": {
+                                            "type": "plain_text",
+                                            "text": "Select people to remove"
+                                        },
+                                        "action_id": "selected_members"
+                                    }
+                                }
+                            ]
+                        }
+                    )
             
             elif action_type == "delete":
                 # Show delete car confirmation modal
@@ -236,6 +417,271 @@ def register_home_tab_handlers(bolt_app):
             
         except Exception as e:
             print(f"Error handling car action {action_type}: {e}")
+    
+    @bolt_app.view("add_members_to_car_*")
+    def handle_add_members_submission(ack, body, client):
+        """Handle add members modal submission"""
+        ack()
+        
+        # Extract car ID from callback_id
+        callback_id = body["view"]["callback_id"]
+        car_id = callback_id.replace("add_members_to_car_", "")
+        user_id = body["user"]["id"]
+        
+        # Get selected members
+        try:
+            selected_members = body["view"]["state"]["values"]
+            member_ids = []
+            
+            for block_id, actions in selected_members.items():
+                for action_id, action_data in actions.items():
+                    if action_id == "selected_members" and action_data.get("selected_users"):
+                        member_ids = action_data["selected_users"]
+                        break
+            
+            if not member_ids:
+                # No members selected
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text="❌ No members selected. Please try again."
+                )
+                return
+            
+            # Show confirmation modal
+            member_names = []
+            for member_id in member_ids:
+                member_names.append(get_username(member_id))
+            
+            client.views_open(
+                trigger_id=body["trigger_id"],
+                view={
+                    "type": "modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": "Confirm Add"
+                    },
+                    "submit": {
+                        "type": "plain_text",
+                        "text": "Yes, Add Them"
+                    },
+                    "close": {
+                        "type": "plain_text",
+                        "text": "Cancel"
+                    },
+                    "callback_id": f"confirm_add_{car_id}_{','.join(member_ids)}",
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"👥 *Confirm Adding Members*\n\nAdd these people to Car #{car_id}?\n\n• {chr(10).join([f'• {name}' for name in member_names])}"
+                            }
+                        }
+                    ]
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error processing add members submission: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text="❌ Error processing your request. Please try again."
+            )
+    
+    @bolt_app.view("boot_members_from_car_*")
+    def handle_boot_members_submission(ack, body, client):
+        """Handle boot members modal submission"""
+        ack()
+        
+        # Extract car ID from callback_id
+        callback_id = body["view"]["callback_id"]
+        car_id = callback_id.replace("boot_members_from_car_", "")
+        user_id = body["user"]["id"]
+        
+        # Get selected members
+        try:
+            selected_members = body["view"]["state"]["values"]
+            member_ids = []
+            
+            for block_id, actions in selected_members.items():
+                for action_id, action_data in actions.items():
+                    if action_id == "selected_members" and action_data.get("selected_users"):
+                        member_ids = action_data["selected_users"]
+                        break
+            
+            if not member_ids:
+                # No members selected
+                client.chat_postEphemeral(
+                    channel=user_id,
+                    user=user_id,
+                    text="❌ No members selected. Please try again."
+                )
+                return
+            
+            # Show confirmation modal
+            member_names = []
+            for member_id in member_ids:
+                member_names.append(get_username(member_id))
+            
+            client.views_open(
+                trigger_id=body["trigger_id"],
+                view={
+                    "type": "modal",
+                    "title": {
+                        "type": "plain_text",
+                        "text": "Confirm Remove"
+                    },
+                    "submit": {
+                        "type": "plain_text",
+                        "text": "Yes, Remove Them"
+                    },
+                    "close": {
+                        "type": "plain_text",
+                        "text": "Cancel"
+                    },
+                    "callback_id": f"confirm_boot_{car_id}_{','.join(member_ids)}",
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"👎 *Confirm Removing Members*\n\nRemove these people from Car #{car_id}?\n\n• {chr(10).join([f'• {name}' for name in member_names])}"
+                            }
+                        }
+                    ]
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error processing boot members submission: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text="❌ Error processing your request. Please try again."
+            )
+    
+    @bolt_app.view("confirm_add_*")
+    def handle_confirm_add(ack, body, client):
+        """Handle add confirmation and execute the database operation"""
+        ack()
+        
+        # Parse callback_id to get car_id and member_ids
+        callback_id = body["view"]["callback_id"]
+        parts = callback_id.replace("confirm_add_", "").split("_")
+        car_id = parts[0]
+        member_ids = parts[1].split(",")
+        user_id = body["user"]["id"]
+        
+        try:
+            # Add members to car in database
+            with get_conn() as conn:
+                cur = conn.cursor()
+                
+                added_members = []
+                failed_members = []
+                
+                for member_id in member_ids:
+                    try:
+                        cur.execute("""
+                            INSERT INTO car_members (car_id, user_id, joined_at)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        """, (car_id, member_id))
+                        
+                        added_members.append(get_username(member_id))
+                    except Exception as e:
+                        print(f"Error adding member {member_id}: {e}")
+                        failed_members.append(get_username(member_id))
+                
+                conn.commit()
+            
+            # Send success/failure feedback
+            if added_members:
+                success_msg = f"✅ Successfully added to Car #{car_id}:\n• {chr(10).join([f'• {name}' for name in added_members])}"
+                if failed_members:
+                    success_msg += f"\n\n❌ Failed to add:\n• {chr(10).join([f'• {name}' for name in failed_members])}"
+            else:
+                success_msg = f"❌ Failed to add any members to Car #{car_id}. Please try again."
+            
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=success_msg
+            )
+            
+            # Refresh the Home Tab
+            update_home_tab_for_user(user_id)
+            
+        except Exception as e:
+            print(f"Error executing add members: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text="❌ Error adding members. Please try again."
+            )
+    
+    @bolt_app.view("confirm_boot_*")
+    def handle_confirm_boot(ack, body, client):
+        """Handle boot confirmation and execute the database operation"""
+        ack()
+        
+        # Parse callback_id to get car_id and member_ids
+        callback_id = body["view"]["callback_id"]
+        parts = callback_id.replace("confirm_boot_", "").split("_")
+        car_id = parts[0]
+        member_ids = parts[1].split(",")
+        user_id = body["user"]["id"]
+        
+        try:
+            # Remove members from car in database
+            with get_conn() as conn:
+                cur = conn.cursor()
+                
+                removed_members = []
+                failed_members = []
+                
+                for member_id in member_ids:
+                    try:
+                        cur.execute("""
+                            DELETE FROM car_members 
+                            WHERE car_id = %s AND user_id = %s
+                        """, (car_id, member_id))
+                        
+                        if cur.rowcount > 0:
+                            removed_members.append(get_username(member_id))
+                        else:
+                            failed_members.append(get_username(member_id))
+                    except Exception as e:
+                        print(f"Error removing member {member_id}: {e}")
+                        failed_members.append(get_username(member_id))
+                
+                conn.commit()
+            
+            # Send success/failure feedback
+            if removed_members:
+                success_msg = f"✅ Successfully removed from Car #{car_id}:\n• {chr(10).join([f'• {name}' for name in removed_members])}"
+                if failed_members:
+                    success_msg += f"\n\n❌ Failed to remove:\n• {chr(10).join([f'• {name}' for name in failed_members])}"
+            else:
+                success_msg = f"❌ Failed to remove any members from Car #{car_id}. Please try again."
+            
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text=success_msg
+            )
+            
+            # Refresh the Home Tab
+            update_home_tab_for_user(user_id)
+            
+        except Exception as e:
+            print(f"Error executing boot members: {e}")
+            client.chat_postEphemeral(
+                channel=user_id,
+                user=user_id,
+                text="❌ Error removing members. Please try again."
+            )
 
 def build_home_tab_view(user_id):
     """Build the home tab dashboard view for a specific user"""
