@@ -1177,13 +1177,29 @@ def register_home_tab_handlers(bolt_app):
 def build_home_tab_view(user_id):
     """Build the home tab dashboard view for a specific user"""
     
-    # Get all active trips across channels the user is in
+    # Get all active trips and filter by user's channel membership
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
-        # Get active trips (simplified - we'll enhance this to filter by user's channels)
+        # Get all active trips
         cur.execute("SELECT name, channel_id, created_by FROM trips WHERE active=TRUE ORDER BY name")
-        trips = cur.fetchall()
+        all_trips = cur.fetchall()
+        
+        # Filter trips to only include channels where user is a member
+        trips = []
+        for trip in all_trips:
+            trip_name, channel_id, trip_creator = trip
+            
+            try:
+                from app import bolt_app
+                # Check if user is a member of this channel
+                channel_members = bolt_app.client.conversations_members(channel=channel_id)
+                if user_id in channel_members['members']:
+                    trips.append(trip)
+            except Exception as e:
+                # If we can't check membership, skip this trip for safety
+                print(f"Error checking channel membership for {channel_id}: {e}")
+                continue
         
         blocks = [
             {
