@@ -110,9 +110,10 @@ def get_active_trip(channel_id: str):
         return row if row else None
 
 def post_announce(trip: str, channel_id: str, text: str):
-    """Post announcement to the trip's channel"""
-    from app import bolt_app  # Import here to avoid circular imports
-    bolt_app.client.chat_postMessage(channel=channel_id, text=text)
+    """Post announcement to the trip's channel - DISABLED to reduce channel noise"""
+    # Channel announcements disabled per user request
+    # Only ephemeral confirmations and DMs should be used
+    pass
 
 def get_username(user_id: str):
     """Get username for a user ID, with fallback to mention format"""
