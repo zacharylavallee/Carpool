@@ -196,7 +196,7 @@ def register_manage_commands(bolt_app):
                         blocks=[]
                     )
                 except Exception:
-                    respond(":x: Car no longer exists or you don't own it.")
+                    eph(respond, ":x: Car no longer exists or you don't own it.")
                 return
             
             car_name = car_row[0]
@@ -214,7 +214,7 @@ def register_manage_commands(bolt_app):
                 blocks=[]
             )
         except Exception:
-            respond(f":white_check_mark: Your car (*{car_name}*) has been deleted.")
+            eph(respond, f":white_check_mark: Your car (*{car_name}*) has been deleted.")
         
         # Removed public announcement - keep channel focused on conversation
 
@@ -232,7 +232,7 @@ def register_manage_commands(bolt_app):
                         text=f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator."
                     )
                 except Exception:
-                    respond(f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator.")
+                    eph(respond, f":wastebasket: Your car (*{car_name}*) on *{trip}* was deleted by its creator.")
 
     @bolt_app.action("cancel_delete_car")
     def handle_cancel_delete_car(ack, body, client, respond):
@@ -245,7 +245,7 @@ def register_manage_commands(bolt_app):
                 blocks=[]
             )
         except Exception:
-            respond(":information_source: Car deletion cancelled.")
+            eph(respond, ":information_source: Car deletion cancelled.")
 
     @bolt_app.action("confirm_update_car")
     def handle_confirm_update_car(ack, body, client, respond):
@@ -270,7 +270,7 @@ def register_manage_commands(bolt_app):
                         blocks=[]
                     )
                 except Exception:
-                    respond(":x: Car no longer exists or you don't own it.")
+                    eph(respond, ":x: Car no longer exists or you don't own it.")
                 return
             
             car_name = car_row[0]
@@ -294,7 +294,7 @@ def register_manage_commands(bolt_app):
                 blocks=[]
             )
         except Exception:
-            respond(feedback)
+            eph(respond, feedback)
         
         # Removed public announcement - keep channel focused on conversation
 

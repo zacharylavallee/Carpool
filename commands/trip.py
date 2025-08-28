@@ -313,7 +313,7 @@ def register_trip_commands(bolt_app):
                     )
                 except Exception:
                     # Fallback to respond if message update fails
-                    respond(f":x: Trip '*{trip_name}*' not found.")
+                    eph(respond, f":x: Trip '*{trip_name}*' not found.")
                 return
             
             trip_creator, trip_channel_id = row
@@ -328,7 +328,7 @@ def register_trip_commands(bolt_app):
                     )
                 except Exception:
                     # Fallback to respond if message update fails
-                    respond(f":x: Only the trip creator can delete '*{trip_name}*'.")
+                    eph(respond, f":x: Only the trip creator can delete '*{trip_name}*'.")
                 return
             
             # Get information about cars for the deletion announcement
@@ -397,7 +397,7 @@ def register_trip_commands(bolt_app):
             )
         except Exception:
             # Fallback to respond if message update fails
-            respond(success_text)
+            eph(respond, success_text)
         
         # Post announcement to the trip's original channel if it still exists
         try:
@@ -422,5 +422,5 @@ def register_trip_commands(bolt_app):
             )
         except Exception:
             # Fallback to respond if message update fails
-            respond(":information_source: Trip deletion cancelled.")
+            eph(respond, ":information_source: Trip deletion cancelled.")
 
