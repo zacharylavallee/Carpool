@@ -1477,3 +1477,4 @@ def update_home_tab_for_user(user_id):
         )
     except Exception as e:
         print(f"Error updating home tab for user {user_id}: {e}")
+        
