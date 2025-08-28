@@ -20,7 +20,8 @@ from commands.member import register_member_commands
 from commands.manage import register_manage_commands
 from middleware.channel_restrictions import register_channel_restrictions
 from commands.user import register_user_commands
-from commands.home_tab import register_home_tab_handlers
+# from commands.home_tab import register_home_tab_handlers  # DISABLED
+from commands.channel_events import register_channel_event_handlers
 
 
 # ─── Logging ─────────────────────────────────────────────────────────────
@@ -66,7 +67,8 @@ register_car_commands(bolt_app)
 register_member_commands(bolt_app)
 register_manage_commands(bolt_app)
 register_user_commands(bolt_app)
-register_home_tab_handlers(bolt_app)
+# register_home_tab_handlers(bolt_app)  # DISABLED
+register_channel_event_handlers(bolt_app)
 
 
 # ─── Flask app for WSGI ──────────────────────────────────────────────────
