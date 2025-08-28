@@ -7,8 +7,28 @@ from config.database import get_conn
 logger = logging.getLogger(__name__)
 
 def eph(respond, text):
-    """Send ephemeral response"""
-    respond(text, response_type="ephemeral")
+    """Send ephemeral response with dismiss button"""
+    respond({
+        "response_type": "ephemeral",
+        "text": text,
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": text}
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Dismiss"},
+                        "action_id": "dismiss_message",
+                        "style": "primary"
+                    }
+                ]
+            }
+        ]
+    })
 
 def auto_dismiss_eph(respond, text, button_text="Got it"):
     """Send auto-dismissing ephemeral response with dismiss button"""
